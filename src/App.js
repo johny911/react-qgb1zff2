@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// ✅ Your actual Supabase keys
+// ✅ Your Supabase keys
 const SUPABASE_URL = "https://hftkpcltkuewskmtkmbq.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdGtwY2x0a3Vld3NrbXRrbWJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYxMTUxMjYsImV4cCI6MjA2MTY5MTEyNn0.sPBgUfablM1Nh1fX1wBeeYHTL-6rljiDUVqeh4c0t_0";
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function App() {
@@ -83,9 +82,7 @@ export default function App() {
     setLoading(true);
     const { data, error } = await supabase
       .from("attendance")
-      .select(
-        "count, labour_types(type_name), labour_teams(name)"
-      )
+      .select("count, labour_types(type_name), labour_teams(name)")
       .eq("project_id", projectId)
       .eq("date", date);
 
@@ -97,37 +94,70 @@ export default function App() {
     setLoading(false);
   };
 
-  // Render screens
+  const containerStyle = {
+    maxWidth: 500,
+    margin: "auto",
+    padding: 20,
+    fontFamily: "Arial",
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: 10,
+    marginBottom: 15,
+    fontSize: 16,
+    borderRadius: 6,
+    border: "1px solid #ccc",
+  };
+
+  const buttonStyle = {
+    width: "100%",
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 10,
+    backgroundColor: "#0066cc",
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
+  };
+
+  const backButton = {
+    ...buttonStyle,
+    backgroundColor: "#666",
+  };
+
   if (screen === "home") {
     return (
-      <div style={{ padding: 20 }}>
+      <div style={containerStyle}>
         <h2>Labour Attendance</h2>
-        <button onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
-        <br /><br />
-        <button onClick={() => setScreen("view")}>👁️ View Attendance</button>
+        <button style={buttonStyle} onClick={() => setScreen("enter")}>
+          ➕ Enter Attendance
+        </button>
+        <button style={buttonStyle} onClick={() => setScreen("view")}>
+          👁️ View Attendance
+        </button>
       </div>
     );
   }
 
   if (screen === "view") {
     return (
-      <div style={{ padding: 20 }}>
+      <div style={containerStyle}>
         <h2>View Attendance</h2>
-        <label>Project:</label>
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+        <select style={inputStyle} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
           <option value="">-- Select Project --</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <br /><br />
-        <label>Date:</label>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <br /><br />
-        <button onClick={fetchAttendance} disabled={loading}>
+
+        <input style={inputStyle} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+
+        <button style={buttonStyle} onClick={fetchAttendance} disabled={loading}>
           {loading ? "Loading..." : "View Attendance"}
         </button>
-        <br /><br />
+
         {viewResults.length > 0 && (
           <div>
             <h4>Results:</h4>
@@ -140,36 +170,30 @@ export default function App() {
             </ul>
           </div>
         )}
-        <br />
-        <button onClick={() => setScreen("home")}>🔙 Back</button>
+
+        <button style={backButton} onClick={() => setScreen("home")}>🔙 Back</button>
       </div>
     );
   }
 
-  // Default: Enter Attendance
   return (
-    <div style={{ padding: 20 }}>
+    <div style={containerStyle}>
       <h2>Enter Attendance</h2>
 
-      <label>Project Name:</label>
-      <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+      <select style={inputStyle} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
         <option value="">-- Select Project --</option>
         {projects.map((p) => (
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
 
-      <br /><br />
-
-      <label>Date of Attendance:</label>
-      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-
-      <br /><br />
+      <input style={inputStyle} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
 
       <h4>Labour Teams</h4>
       {rows.map((row, index) => (
-        <div key={index} style={{ marginBottom: 10 }}>
+        <div key={index} style={{ marginBottom: 15 }}>
           <select
+            style={inputStyle}
             value={row.teamId}
             onChange={(e) => handleRowChange(index, "teamId", e.target.value)}
           >
@@ -177,9 +201,10 @@ export default function App() {
             {teams.map((team) => (
               <option key={team.id} value={team.id}>{team.name}</option>
             ))}
-          </select>{" "}
+          </select>
 
           <select
+            style={inputStyle}
             value={row.typeId}
             onChange={(e) => handleRowChange(index, "typeId", e.target.value)}
             disabled={!row.teamId}
@@ -188,27 +213,25 @@ export default function App() {
             {(types[row.teamId] || []).map((type) => (
               <option key={type.id} value={type.id}>{type.type_name}</option>
             ))}
-          </select>{" "}
+          </select>
 
           <input
+            style={inputStyle}
             type="number"
             placeholder="Count"
             value={row.count}
             onChange={(e) => handleRowChange(index, "count", e.target.value)}
-            style={{ width: 80 }}
           />
         </div>
       ))}
 
-      <button onClick={addRow}>+ Add Team</button>
+      <button style={buttonStyle} onClick={addRow}>+ Add Team</button>
 
-      <br /><br />
-      <button onClick={handleSubmit} disabled={loading}>
+      <button style={buttonStyle} onClick={handleSubmit} disabled={loading}>
         {loading ? "Submitting..." : "Submit Attendance"}
       </button>
 
-      <br /><br />
-      <button onClick={() => setScreen("home")}>🔙 Back</button>
+      <button style={backButton} onClick={() => setScreen("home")}>🔙 Back</button>
     </div>
   );
 }

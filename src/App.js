@@ -1,3 +1,5 @@
+// ✅ Full Updated App.js with Mobile-Optimized Width and UI Polish
+
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -45,9 +47,7 @@ export default function App() {
     setRows(updated);
   };
 
-  const addRow = () => {
-    setRows([...rows, { teamId: "", typeId: "", count: "" }]);
-  };
+  const addRow = () => setRows([...rows, { teamId: "", typeId: "", count: "" }]);
 
   const deleteRow = (index) => {
     const updated = [...rows];
@@ -103,14 +103,8 @@ export default function App() {
             from { opacity: 0; transform: scale(0.96); }
             to { opacity: 1; transform: scale(1); }
           }
-
-          button:hover {
-            filter: brightness(1.05);
-          }
-
-          button:active {
-            transform: scale(0.98);
-          }
+          button:hover { filter: brightness(1.05); }
+          button:active { transform: scale(0.98); }
         `}
       </style>
 
@@ -208,24 +202,27 @@ export default function App() {
   );
 }
 
-// --- STYLES ---
 const styles = {
   wrapper: {
-    minHeight: "100vh",
+    width: "100vw",
+    overflowX: "hidden",
     background: "#f2f4f8",
-    padding: "20px 10px",
+    padding: "20px 0",
     boxSizing: "border-box",
   },
   container: {
-    maxWidth: "480px",
-    margin: "auto",
+    width: "100%",
+    maxWidth: "100%",
+    margin: "0 auto",
     fontFamily: "system-ui, sans-serif",
   },
   card: {
     background: "#fff",
     borderRadius: "14px",
-    padding: "20px",
+    padding: "20px 16px",
+    margin: "0 10px 20px",
     boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+    boxSizing: "border-box",
   },
   heading: {
     textAlign: "center",

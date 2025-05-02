@@ -45,7 +45,9 @@ export default function App() {
     setRows(updated);
   };
 
-  const addRow = () => setRows([...rows, { teamId: "", typeId: "", count: "" }]);
+  const addRow = () => {
+    setRows([...rows, { teamId: "", typeId: "", count: "" }]);
+  };
 
   const deleteRow = (index) => {
     const updated = [...rows];
@@ -90,102 +92,46 @@ export default function App() {
     setLoading(false);
   };
 
-  // --- STYLES ---
-  const outerWrap = {
-    width: "100vw",
-    overflowX: "hidden",
-    minHeight: "100vh",
-    background: "#f2f4f8",
-    padding: "20px 10px",
-    boxSizing: "border-box",
-  };
+  return (
+    <div style={styles.wrapper}>
+      <style>
+        {`
+          .fade-in {
+            animation: fadeIn 0.4s ease-in-out;
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.96); }
+            to { opacity: 1; transform: scale(1); }
+          }
 
-  const container = {
-    maxWidth: "480px",
-    margin: "auto",
-    fontFamily: "system-ui, sans-serif",
-  };
+          button:hover {
+            filter: brightness(1.05);
+          }
 
-  const card = {
-    background: "#fff",
-    borderRadius: "14px",
-    padding: "20px",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
-    marginBottom: "20px",
-  };
+          button:active {
+            transform: scale(0.98);
+          }
+        `}
+      </style>
 
-  const input = {
-    width: "100%",
-    padding: "12px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: "1px solid #ccc",
-    marginBottom: "12px",
-    boxSizing: "border-box",
-  };
-
-  const button = {
-    width: "100%",
-    padding: "14px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: "none",
-    cursor: "pointer",
-    marginBottom: "12px",
-  };
-
-  const primary = { ...button, background: "#1976d2", color: "#fff" };
-  const success = { ...button, background: "#2e7d32", color: "#fff" };
-  const danger = { ...button, background: "#d32f2f", color: "#fff" };
-  const gray = { ...button, background: "#757575", color: "#fff" };
-
-  const rowCard = {
-    ...card,
-    position: "relative",
-    paddingBottom: "10px",
-  };
-
-  const deleteBtn = {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    background: "#e53935",
-    color: "#fff",
-    border: "none",
-    borderRadius: "50%",
-    width: 28,
-    height: 28,
-    fontWeight: "bold",
-    cursor: "pointer"
-  };
-
-  // --- SCREENS ---
-  if (screen === "home") {
-    return (
-      <div style={outerWrap}>
-        <div style={container}>
-          <div style={card}>
-            <h2 style={{ textAlign: "center" }}>Labour Attendance</h2>
-            <button style={primary} onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
-            <button style={gray} onClick={() => setScreen("view")}>👁️ View Attendance</button>
+      <div style={styles.container}>
+        {screen === "home" && (
+          <div className="fade-in" style={styles.card}>
+            <h2 style={styles.heading}>Labour Attendance</h2>
+            <button style={styles.primaryBtn} onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
+            <button style={styles.secondaryBtn} onClick={() => setScreen("view")}>👁️ View Attendance</button>
           </div>
-        </div>
-      </div>
-    );
-  }
+        )}
 
-  if (screen === "view") {
-    return (
-      <div style={outerWrap}>
-        <div style={container}>
-          <div style={card}>
+        {screen === "view" && (
+          <div className="fade-in" style={styles.card}>
             <h3>View Attendance</h3>
-            <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
               <option value="">-- Select Project --</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
-            <button style={primary} onClick={fetchAttendance}>View</button>
+            <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+            <button style={styles.primaryBtn} onClick={fetchAttendance}>View</button>
             {viewResults.length > 0 && (
               <ul>
                 {viewResults.map((r, i) => (
@@ -193,74 +139,160 @@ export default function App() {
                 ))}
               </ul>
             )}
-            <button style={gray} onClick={() => setScreen("home")}>🔙 Back</button>
+            <button style={styles.secondaryBtn} onClick={() => setScreen("home")}>🔙 Back</button>
           </div>
-        </div>
-      </div>
-    );
-  }
+        )}
 
-  return (
-    <div style={outerWrap}>
-      <div style={container}>
-        <div style={card}>
-          <h3>Enter Attendance</h3>
-          <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">-- Select Project --</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
+        {screen === "enter" && (
+          <div className="fade-in" style={styles.card}>
+            <h3>Enter Attendance</h3>
+            <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
 
-          {rows.map((row, index) => (
-            <div key={index} style={rowCard}>
-              <button onClick={() => deleteRow(index)} style={deleteBtn}>×</button>
-              <select style={input} value={row.teamId} onChange={(e) => handleRowChange(index, "teamId", e.target.value)}>
-                <option value="">-- Select Team --</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>{team.name}</option>
-                ))}
-              </select>
-              <select
-                style={input}
-                value={row.typeId}
-                onChange={(e) => handleRowChange(index, "typeId", e.target.value)}
-                disabled={!row.teamId}
-              >
-                <option value="">-- Select Type --</option>
-                {(types[row.teamId] || []).map((type) => (
-                  <option key={type.id} value={type.id}>{type.type_name}</option>
-                ))}
-              </select>
-              <input
-                style={input}
-                type="number"
-                placeholder="No. of Batches"
-                value={row.count}
-                onChange={(e) => handleRowChange(index, "count", e.target.value)}
-              />
-            </div>
-          ))}
+            {rows.map((row, index) => (
+              <div key={index} className="fade-in" style={styles.rowCard}>
+                <button style={styles.deleteBtn} onClick={() => deleteRow(index)}>×</button>
+                <select style={styles.input} value={row.teamId} onChange={(e) => handleRowChange(index, "teamId", e.target.value)}>
+                  <option value="">-- Select Team --</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+                </select>
+                <select
+                  style={styles.input}
+                  value={row.typeId}
+                  onChange={(e) => handleRowChange(index, "typeId", e.target.value)}
+                  disabled={!row.teamId}
+                >
+                  <option value="">-- Select Type --</option>
+                  {(types[row.teamId] || []).map((type) => (
+                    <option key={type.id} value={type.id}>{type.type_name}</option>
+                  ))}
+                </select>
+                <input
+                  style={styles.input}
+                  type="number"
+                  placeholder="No. of Batches"
+                  value={row.count}
+                  onChange={(e) => handleRowChange(index, "count", e.target.value)}
+                />
+              </div>
+            ))}
 
-          <button style={primary} onClick={addRow}>+ Add Team</button>
-          <button style={gray} onClick={() => setShowPreview(true)}>👁️ Preview Summary</button>
+            <button style={styles.primaryBtn} onClick={addRow}>+ Add Team</button>
+            <button style={styles.secondaryBtn} onClick={() => setShowPreview(true)}>👁️ Preview Summary</button>
 
-          {showPreview && (
-            <div style={{ marginTop: 20 }}>
-              <h4>Summary</h4>
-              <ul>
-                {rows.map((r, i) => {
-                  const team = teams.find(t => t.id == r.teamId)?.name || "Team";
-                  const type = types[r.teamId]?.find(t => t.id == r.typeId)?.type_name || "Type";
-                  return <li key={i}>{team} – {type} – {r.count} nos</li>;
-                })}
-              </ul>
-              <button style={success} onClick={handleSubmit}>✅ Submit Attendance</button>
-            </div>
-          )}
-
-          <button style={gray} onClick={() => setScreen("home")}>🔙 Back</button>
-        </div>
+            {showPreview && (
+              <div style={{ marginTop: 16 }}>
+                <h4>Summary</h4>
+                <ul>
+                  {rows.map((r, i) => {
+                    const team = teams.find(t => t.id == r.teamId)?.name || "Team";
+                    const type = types[r.teamId]?.find(t => t.id == r.typeId)?.type_name || "Type";
+                    return <li key={i}>{team} – {type} – {r.count} nos</li>;
+                  })}
+                </ul>
+                <button style={styles.successBtn} onClick={handleSubmit}>
+                  ✅ Submit Attendance
+                </button>
+              </div>
+            )}
+            <button style={styles.secondaryBtn} onClick={() => setScreen("home")}>🔙 Back</button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+// --- STYLES ---
+const styles = {
+  wrapper: {
+    minHeight: "100vh",
+    background: "#f2f4f8",
+    padding: "20px 10px",
+    boxSizing: "border-box",
+  },
+  container: {
+    maxWidth: "480px",
+    margin: "auto",
+    fontFamily: "system-ui, sans-serif",
+  },
+  card: {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "20px",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+  },
+  heading: {
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  input: {
+    width: "100%",
+    padding: "12px",
+    fontSize: "16px",
+    borderRadius: "10px",
+    border: "1px solid #ccc",
+    marginBottom: "12px",
+    boxSizing: "border-box",
+  },
+  rowCard: {
+    background: "#fafafa",
+    border: "1px solid #ddd",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "16px",
+    position: "relative",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+  },
+  deleteBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    background: "#d32f2f",
+    color: "#fff",
+    border: "none",
+    borderRadius: "50%",
+    width: 28,
+    height: 28,
+    fontWeight: "bold",
+    cursor: "pointer",
+  },
+  primaryBtn: {
+    width: "100%",
+    padding: "14px",
+    fontSize: "16px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#1976d2",
+    color: "#fff",
+    marginBottom: "12px",
+    cursor: "pointer",
+  },
+  successBtn: {
+    width: "100%",
+    padding: "14px",
+    fontSize: "16px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#2e7d32",
+    color: "#fff",
+    marginBottom: "12px",
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    width: "100%",
+    padding: "14px",
+    fontSize: "16px",
+    borderRadius: "10px",
+    border: "none",
+    background: "#666",
+    color: "#fff",
+    marginBottom: "12px",
+    cursor: "pointer",
+  },
+};

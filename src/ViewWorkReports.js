@@ -43,17 +43,21 @@ export default function ViewWorkReports({ onBack }) {
         work_description,
         quantity,
         uom,
-        work_report_labours:work_report_labours (
+        work_report_labours (
           count,
-          labour_types (type_name),
-          labour_teams (name)
+          labour_types!labour_type_id (
+            type_name
+          ),
+          labour_teams!team_id (
+            name
+          )
         )
       `)
       .eq('report_id', reportId);
 
     if (workError) {
-      alert('Error loading report.');
-      console.error(workError);
+      console.error('Fetch error:', workError);
+      alert('❌ Error loading report. See console for details.');
       setLoading(false);
       return;
     }

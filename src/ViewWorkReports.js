@@ -43,13 +43,13 @@ export default function ViewWorkReports({ onBack }) {
         work_description,
         quantity,
         uom,
-        work_report_labours:work_report_labours!work_report_labours_work_allotment_id_fkey (
+        work_report_labours:work_report_labours_work_allotment_id_fkey (
           count,
-          labour_types (
-            type_name
-          ),
           labour_teams (
             name
+          ),
+          labour_types (
+            type_name
           )
         )
       `)

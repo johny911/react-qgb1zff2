@@ -71,7 +71,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
   };
 
   const addRow = () => setRows([...rows, { teamId: '', typeId: '', count: '' }]);
-
   const deleteRow = (index) => {
     const updated = [...rows];
     updated.splice(index, 1);
@@ -95,12 +94,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
       date,
       team_id: row.teamId,
       labour_type_id: row.typeId,
-      count: parseInt(row.count),
+      count: parseInt(row.count, 10),
     }));
 
     const { error } = await supabase.from('attendance').insert(payload);
-    if (error) alert('Error: ' + error.message);
-    else {
+    if (error) {
+      alert('Error: ' + error.message);
+    } else {
       alert('Attendance submitted!');
       setShowPreview(false);
       setAttendanceMarked(true);
@@ -218,7 +218,8 @@ export default function MainAttendanceApp({ user, onLogout }) {
         )}
 
         {screen === 'work' && (
-          <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />
+-         <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />
++         <WorkReport onBack={() => setScreen('home')} />
         )}
         {screen === 'view-work' && (
           <ViewWorkReports onBack={() => setScreen('home')} />

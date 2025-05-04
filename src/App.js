@@ -1,4 +1,4 @@
-// ✅ Full App with Supabase Auth, Attendance Edit Check, and Preview Summary
+// ✅ Full App with Status Indicator + Edit Button for Attendance Entry
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -25,7 +25,7 @@ export default function App() {
   const [authScreen, setAuthScreen] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isMarked, setIsMarked] = useState(false);
   const [existingAttendanceIds, setExistingAttendanceIds] = useState([]);
 
   useEffect(() => {
@@ -61,9 +61,9 @@ export default function App() {
   };
 
   const handleRegister = async () => {
-    const { error, data } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
-    else alert("Registration successful, please check your email to confirm.");
+    else alert("Registration successful. Please check your email to confirm.");
   };
 
   const handleLogout = async () => {
@@ -86,32 +86,34 @@ export default function App() {
     setRows(updated.length ? updated : [{ teamId: "", typeId: "", count: "" }]);
   };
 
-  const checkExistingAttendance = async () => {
-    if (!projectId || !date) return;
-    const { data, error } = await supabase
+  const checkAttendanceStatus = async (projId, selectedDate) => {
+    if (!projId || !selectedDate) return;
+    const { data } = await supabase
+      .from("attendance")
+      .select("*")
+      .eq("project_id", projId)
+      .eq("date", selectedDate);
+    if (data && data.length > 0) {
+      setIsMarked(true);
+      setExistingAttendanceIds(data.map((d) => d.id));
+    } else {
+      setIsMarked(false);
+      setExistingAttendanceIds([]);
+    }
+  };
+
+  const loadAttendanceForEdit = async () => {
+    const { data } = await supabase
       .from("attendance")
       .select("*")
       .eq("project_id", projectId)
       .eq("date", date);
-
-    if (data && data.length > 0) {
-      const confirmEdit = window.confirm("Attendance has already been marked. Do you want to edit it?");
-      if (confirmEdit) {
-        setIsEditMode(true);
-        setExistingAttendanceIds(data.map((entry) => entry.id));
-        const formatted = data.map((entry) => ({
-          teamId: entry.team_id,
-          typeId: entry.labour_type_id,
-          count: entry.count.toString(),
-        }));
-        setRows(formatted);
-      } else {
-        setScreen("home");
-      }
-    } else {
-      setIsEditMode(false);
-      setRows([{ teamId: "", typeId: "", count: "" }]);
-    }
+    const formatted = data.map((entry) => ({
+      teamId: entry.team_id,
+      typeId: entry.labour_type_id,
+      count: entry.count.toString(),
+    }));
+    setRows(formatted);
   };
 
   const handleSubmit = async () => {
@@ -120,11 +122,9 @@ export default function App() {
       return;
     }
     setLoading(true);
-
-    if (isEditMode && existingAttendanceIds.length > 0) {
+    if (isMarked && existingAttendanceIds.length > 0) {
       await supabase.from("attendance").delete().in("id", existingAttendanceIds);
     }
-
     const payload = rows.map((row) => ({
       project_id: projectId,
       date,
@@ -132,7 +132,6 @@ export default function App() {
       labour_type_id: row.typeId,
       count: parseInt(row.count),
     }));
-
     const { error } = await supabase.from("attendance").insert(payload);
     if (error) alert("Error: " + error.message);
     else {
@@ -194,19 +193,51 @@ export default function App() {
         {screen === "home" && (
           <div className="fade-in" style={styles.card}>
             <h2 style={styles.heading}>Labour Attendance</h2>
-            <button style={styles.primaryBtn} onClick={() => { setScreen("enter"); checkExistingAttendance(); }}>➕ Enter Attendance</button>
+            <button style={styles.primaryBtn} onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
             <button style={styles.secondaryBtn} onClick={() => setScreen("view")}>👁️ View Attendance</button>
           </div>
         )}
 
         {screen === "enter" && (
           <div style={styles.card}>
-            <h3>{isEditMode ? "Edit Attendance" : "Enter Attendance"}</h3>
-            <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <h3>Enter Attendance</h3>
+            <select
+              style={styles.input}
+              value={projectId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setProjectId(val);
+                checkAttendanceStatus(val, date);
+              }}
+            >
               <option value="">-- Select Project --</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+
+            <input
+              type="date"
+              style={styles.input}
+              value={date}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDate(val);
+                checkAttendanceStatus(projectId, val);
+              }}
+            />
+
+            {projectId && date && (
+              <div style={{ marginBottom: 12 }}>
+                {isMarked ? (
+                  <>
+                    <span style={{ color: "green" }}>✅ Attendance already marked.</span>
+                    <button style={{ ...styles.secondaryBtn, marginTop: 8 }} onClick={loadAttendanceForEdit}>✏️ Edit Attendance</button>
+                  </>
+                ) : (
+                  <span style={{ color: "red" }}>❌ Attendance not marked yet.</span>
+                )}
+              </div>
+            )}
+
             {rows.map((row, index) => (
               <div key={index} style={styles.rowCard}>
                 <button style={styles.deleteBtn} onClick={() => deleteRow(index)}>×</button>

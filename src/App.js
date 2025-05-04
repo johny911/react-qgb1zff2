@@ -1,4 +1,4 @@
-// ✅ Full App with Working Navigation, Attendance Entry, View Attendance, Preview Summary, and Supabase Auth
+// ✅ Full App with Supabase Auth, Attendance Edit Check, and Preview Summary
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -25,6 +25,8 @@ export default function App() {
   const [authScreen, setAuthScreen] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [existingAttendanceIds, setExistingAttendanceIds] = useState([]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
@@ -84,12 +86,45 @@ export default function App() {
     setRows(updated.length ? updated : [{ teamId: "", typeId: "", count: "" }]);
   };
 
+  const checkExistingAttendance = async () => {
+    if (!projectId || !date) return;
+    const { data, error } = await supabase
+      .from("attendance")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("date", date);
+
+    if (data && data.length > 0) {
+      const confirmEdit = window.confirm("Attendance has already been marked. Do you want to edit it?");
+      if (confirmEdit) {
+        setIsEditMode(true);
+        setExistingAttendanceIds(data.map((entry) => entry.id));
+        const formatted = data.map((entry) => ({
+          teamId: entry.team_id,
+          typeId: entry.labour_type_id,
+          count: entry.count.toString(),
+        }));
+        setRows(formatted);
+      } else {
+        setScreen("home");
+      }
+    } else {
+      setIsEditMode(false);
+      setRows([{ teamId: "", typeId: "", count: "" }]);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!projectId || !date || rows.some(r => !r.teamId || !r.typeId || !r.count)) {
       alert("Please fill all fields");
       return;
     }
     setLoading(true);
+
+    if (isEditMode && existingAttendanceIds.length > 0) {
+      await supabase.from("attendance").delete().in("id", existingAttendanceIds);
+    }
+
     const payload = rows.map((row) => ({
       project_id: projectId,
       date,
@@ -97,6 +132,7 @@ export default function App() {
       labour_type_id: row.typeId,
       count: parseInt(row.count),
     }));
+
     const { error } = await supabase.from("attendance").insert(payload);
     if (error) alert("Error: " + error.message);
     else {
@@ -158,14 +194,14 @@ export default function App() {
         {screen === "home" && (
           <div className="fade-in" style={styles.card}>
             <h2 style={styles.heading}>Labour Attendance</h2>
-            <button style={styles.primaryBtn} onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
+            <button style={styles.primaryBtn} onClick={() => { setScreen("enter"); checkExistingAttendance(); }}>➕ Enter Attendance</button>
             <button style={styles.secondaryBtn} onClick={() => setScreen("view")}>👁️ View Attendance</button>
           </div>
         )}
 
         {screen === "enter" && (
           <div style={styles.card}>
-            <h3>Enter Attendance</h3>
+            <h3>{isEditMode ? "Edit Attendance" : "Enter Attendance"}</h3>
             <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
               <option value="">-- Select Project --</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -232,49 +268,14 @@ export default function App() {
 
 const styles = {
   wrapper: { width: "100vw", overflowX: "hidden", background: "#f9fafe", minHeight: "100vh" },
-  header: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "16px 20px", background: "#fff", borderBottom: "1px solid #eee",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
-  },
-  container: {
-    width: "100%", maxWidth: "100%", margin: "0 auto", padding: "16px",
-    fontFamily: "system-ui, sans-serif",
-  },
-  card: {
-    background: "#fff", borderRadius: "14px", padding: "20px 16px",
-    marginBottom: "20px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-  },
-  heading: {
-    textAlign: "center", marginBottom: 24,
-  },
-  input: {
-    width: "100%", padding: "12px", fontSize: "16px", borderRadius: "10px",
-    border: "1px solid #ccc", marginBottom: "12px", boxSizing: "border-box",
-  },
-  rowCard: {
-    background: "#fafafa", border: "1px solid #ddd", borderRadius: "12px",
-    padding: "16px", marginBottom: "16px", position: "relative",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
-  },
-  deleteBtn: {
-    position: "absolute", top: 10, right: 10, background: "#d32f2f",
-    color: "#fff", border: "none", borderRadius: "50%", width: 28, height: 28,
-    fontWeight: "bold", cursor: "pointer",
-  },
-  primaryBtn: {
-    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
-    border: "none", background: "#1976d2", color: "#fff",
-    marginBottom: "12px", cursor: "pointer",
-  },
-  successBtn: {
-    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
-    border: "none", background: "#2e7d32", color: "#fff",
-    marginBottom: "12px", cursor: "pointer",
-  },
-  secondaryBtn: {
-    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
-    border: "none", background: "#666", color: "#fff",
-    marginBottom: "12px", cursor: "pointer",
-  },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#fff", borderBottom: "1px solid #eee", boxShadow: "0 2px 4px rgba(0,0,0,0.03)" },
+  container: { width: "100%", maxWidth: "100%", margin: "0 auto", padding: "16px", fontFamily: "system-ui, sans-serif" },
+  card: { background: "#fff", borderRadius: "14px", padding: "20px 16px", marginBottom: "20px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
+  heading: { textAlign: "center", marginBottom: 24 },
+  input: { width: "100%", padding: "12px", fontSize: "16px", borderRadius: "10px", border: "1px solid #ccc", marginBottom: "12px", boxSizing: "border-box" },
+  rowCard: { background: "#fafafa", border: "1px solid #ddd", borderRadius: "12px", padding: "16px", marginBottom: "16px", position: "relative", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" },
+  deleteBtn: { position: "absolute", top: 10, right: 10, background: "#d32f2f", color: "#fff", border: "none", borderRadius: "50%", width: 28, height: 28, fontWeight: "bold", cursor: "pointer" },
+  primaryBtn: { width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px", border: "none", background: "#1976d2", color: "#fff", marginBottom: "12px", cursor: "pointer" },
+  successBtn: { width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px", border: "none", background: "#2e7d32", color: "#fff", marginBottom: "12px", cursor: "pointer" },
+  secondaryBtn: { width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px", border: "none", background: "#666", color: "#fff", marginBottom: "12px", cursor: "pointer" },
 };

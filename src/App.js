@@ -1,4 +1,5 @@
-// ✅ Full App.js with Working Login, Enter Attendance & View Attendance Screens
+// ✅ Styled Attendance App (Enter + View Attendance Screens)
+// React + Supabase with Clean Mobile UI
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -10,10 +11,6 @@ const supabase = createClient(
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [authScreen, setAuthScreen] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [screen, setScreen] = useState("home");
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -22,15 +19,18 @@ export default function App() {
   const [projectId, setProjectId] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [viewResults, setViewResults] = useState([]);
+  const [marked, setMarked] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoadingUser(false);
-    });
+    fetchUser();
     fetchBaseData();
   }, []);
+
+  const fetchUser = async () => {
+    const { data } = await supabase.auth.getUser();
+    setUser(data.user);
+  };
 
   const fetchBaseData = async () => {
     const { data: projectsData } = await supabase.from("projects").select("*");
@@ -46,21 +46,18 @@ export default function App() {
     setTypes(typeMap);
   };
 
-  const handleLogin = async () => {
-    const { error, data } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert(error.message);
-    else setUser(data.user);
-  };
+  useEffect(() => {
+    checkMarked();
+  }, [projectId, date]);
 
-  const handleRegister = async () => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) alert(error.message);
-    else alert("Registration successful. Please check your email.");
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+  const checkMarked = async () => {
+    if (!projectId || !date) return;
+    const { data } = await supabase
+      .from("attendance")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("date", date);
+    setMarked(data && data.length > 0);
   };
 
   const handleRowChange = (index, field, value) => {
@@ -79,10 +76,6 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    if (!projectId || !date || rows.some(r => !r.teamId || !r.typeId || !r.count)) {
-      alert("Please fill all fields");
-      return;
-    }
     const payload = rows.map((row) => ({
       project_id: projectId,
       date,
@@ -93,7 +86,8 @@ export default function App() {
     const { error } = await supabase.from("attendance").insert(payload);
     if (error) alert("Error: " + error.message);
     else {
-      alert("Attendance submitted!");
+      alert("Submitted");
+      setMarked(true);
       setRows([{ teamId: "", typeId: "", count: "" }]);
       setShowPreview(false);
       setScreen("home");
@@ -101,7 +95,6 @@ export default function App() {
   };
 
   const fetchAttendance = async () => {
-    if (!projectId || !date) return alert("Select project and date");
     const { data } = await supabase
       .from("attendance")
       .select("count, labour_types(type_name), labour_teams(name)")
@@ -110,104 +103,75 @@ export default function App() {
     setViewResults(data || []);
   };
 
-  if (loadingUser) return <div style={{ padding: 20 }}>Loading...</div>;
-
-  if (!user) {
-    return (
-      <div style={styles.authWrapper}>
-        <div style={styles.authCard}>
-          <h2 style={styles.logo}><span role="img" aria-label="building">🏗️</span> SiteTrack</h2>
-          <div style={styles.tabContainer}>
-            <button style={authScreen === 'login' ? styles.activeTab : styles.inactiveTab} onClick={() => setAuthScreen('login')}>Login</button>
-            <button style={authScreen === 'register' ? styles.activeTab : styles.inactiveTab} onClick={() => setAuthScreen('register')}>Register</button>
-          </div>
-          <div style={styles.formGroup}>
-            <input style={styles.input} placeholder="📧 Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input style={styles.input} placeholder="🔒 Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <button style={styles.primaryBtn} onClick={authScreen === 'login' ? handleLogin : handleRegister}>Continue</button>
-          {authScreen === 'login' && <p style={styles.linkText}>Forgot Password?</p>}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>👋 Good Morning, {user.email}</h2>
-        <button onClick={handleLogout} style={styles.secondaryBtn}>Logout</button>
-      </div>
-
-      {screen === 'home' && (
-        <div style={{ marginTop: 40 }}>
-          <button style={styles.primaryBtn} onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
-          <button style={styles.secondaryBtn} onClick={() => setScreen('view')}>👁️ View Attendance</button>
+    <div style={styles.container}>
+      {screen === "home" && (
+        <div>
+          <h2 style={styles.greeting}>Good Morning, {user?.email?.split("@")[0]} 👋</h2>
+          <p style={styles.subtext}>Track your site attendance</p>
+          <div style={styles.cardButton} onClick={() => setScreen("enter")}>➕ Enter Attendance</div>
+          <div style={styles.cardButton} onClick={() => setScreen("view")}>👁️ View Attendance</div>
         </div>
       )}
 
-      {screen === 'enter' && (
-        <div style={{ marginTop: 20 }}>
+      {screen === "enter" && (
+        <div>
+          <h3 style={styles.title}>← Enter Attendance</h3>
           <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">-- Select Project --</option>
+            <option value="">Select Project</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+          {marked && <div style={styles.marked}>✅ Attendance marked</div>}
 
           {rows.map((row, index) => (
-            <div key={index} style={{ marginBottom: 16 }}>
-              <select style={styles.input} value={row.teamId} onChange={(e) => handleRowChange(index, "teamId", e.target.value)}>
-                <option value="">-- Select Team --</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            <div key={index} style={styles.entryCard}>
+              <div style={styles.entryHeader}>
+                <strong>Team Entry</strong>
+                <button onClick={() => deleteRow(index)} style={styles.trash}>🗑️</button>
+              </div>
+              <select style={styles.input} value={row.teamId} onChange={(e) => handleRowChange(index, 'teamId', e.target.value)}>
+                <option value="">Select Team</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <select style={styles.input} value={row.typeId} onChange={(e) => handleRowChange(index, "typeId", e.target.value)} disabled={!row.teamId}>
-                <option value="">-- Select Type --</option>
-                {(types[row.teamId] || []).map((type) => <option key={type.id} value={type.id}>{type.type_name}</option>)}
+              <select style={styles.input} value={row.typeId} onChange={(e) => handleRowChange(index, 'typeId', e.target.value)} disabled={!row.teamId}>
+                <option value="">Select Labor Type</option>
+                {(types[row.teamId] || []).map((t) => <option key={t.id} value={t.id}>{t.type_name}</option>)}
               </select>
-              <input style={styles.input} type="number" placeholder="No. of Batches" value={row.count} onChange={(e) => handleRowChange(index, "count", e.target.value)} />
-              <button style={styles.secondaryBtn} onClick={() => deleteRow(index)}>× Remove</button>
+              <input style={styles.input} type="number" placeholder="Number of Workers" value={row.count} onChange={(e) => handleRowChange(index, 'count', e.target.value)} />
             </div>
           ))}
 
-          <button style={styles.primaryBtn} onClick={addRow}>+ Add Team</button>
-          <button style={styles.secondaryBtn} onClick={() => setShowPreview(true)}>👁️ Preview</button>
-
-          {showPreview && (
-            <div style={{ marginTop: 16 }}>
-              <h4>Summary</h4>
-              <ul>
-                {rows.map((r, i) => {
-                  const team = teams.find(t => t.id == r.teamId)?.name || "Team";
-                  const type = types[r.teamId]?.find(t => t.id == r.typeId)?.type_name || "Type";
-                  return <li key={i}>{team} – {type} – {r.count} nos</li>;
-                })}
-              </ul>
-              <button style={styles.primaryBtn} onClick={handleSubmit}>✅ Submit</button>
-            </div>
-          )}
-
-          <button style={styles.secondaryBtn} onClick={() => setScreen('home')}>🔙 Back</button>
+          <div onClick={addRow} style={styles.dashedBox}>+ Add Team</div>
+          <div style={styles.btnRow}>
+            <button style={styles.outlineBtn} onClick={() => setShowPreview(true)}>Preview Summary</button>
+            <button style={styles.primaryBtn} onClick={handleSubmit}>Submit Attendance</button>
+          </div>
+          <button style={styles.back} onClick={() => setScreen("home")}>← Back</button>
         </div>
       )}
 
-      {screen === 'view' && (
-        <div style={{ marginTop: 20 }}>
+      {screen === "view" && (
+        <div>
+          <h3 style={styles.title}>← View Attendance</h3>
           <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">-- Select Project --</option>
+            <option value="">Select Project</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
           <button style={styles.primaryBtn} onClick={fetchAttendance}>View</button>
 
-          {viewResults.length > 0 && (
-            <ul style={{ marginTop: 16 }}>
-              {viewResults.map((r, i) => (
-                <li key={i}>{r.labour_teams.name} – {r.labour_types.type_name} – {r.count} nos</li>
-              ))}
-            </ul>
-          )}
+          {viewResults.map((r, i) => (
+            <div key={i} style={styles.viewCard}>
+              <div>
+                <strong>{r.labour_teams.name}</strong><br />
+                {r.labour_types.type_name} – {r.count} nos
+              </div>
+              <span>👁️</span>
+            </div>
+          ))}
 
-          <button style={styles.secondaryBtn} onClick={() => setScreen('home')}>🔙 Back</button>
+          <button style={styles.back} onClick={() => setScreen("home")}>← Back</button>
         </div>
       )}
     </div>
@@ -215,37 +179,20 @@ export default function App() {
 }
 
 const styles = {
-  authWrapper: {
-    display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f9fafb',
-  },
-  authCard: {
-    background: '#fff', padding: '32px', borderRadius: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', width: '90%', maxWidth: '360px', textAlign: 'center',
-  },
-  logo: {
-    marginBottom: '24px', fontSize: '24px', fontWeight: 'bold',
-  },
-  tabContainer: {
-    display: 'flex', marginBottom: '16px',
-  },
-  activeTab: {
-    flex: 1, padding: '12px', background: '#3f51b5', color: '#fff', border: 'none', borderRadius: '10px 0 0 10px', cursor: 'pointer',
-  },
-  inactiveTab: {
-    flex: 1, padding: '12px', background: '#f0f0f0', color: '#444', border: 'none', borderRadius: '0 10px 10px 0', cursor: 'pointer',
-  },
-  formGroup: {
-    display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px',
-  },
-  input: {
-    width: '100%', padding: '12px', fontSize: '16px', borderRadius: '10px', border: '1px solid #ccc', boxSizing: 'border-box', marginBottom: 10,
-  },
-  primaryBtn: {
-    width: '100%', padding: '14px', fontSize: '16px', borderRadius: '10px', border: 'none', background: '#3f51b5', color: '#fff', marginBottom: '12px', cursor: 'pointer',
-  },
-  secondaryBtn: {
-    padding: '10px 16px', fontSize: '14px', borderRadius: '8px', border: 'none', background: '#666', color: '#fff', marginTop: '12px', cursor: 'pointer',
-  },
-  linkText: {
-    fontSize: '14px', color: '#3f51b5', marginTop: '12px',
-  },
+  container: { padding: 20, fontFamily: 'system-ui, sans-serif', background: '#f5f6fa', minHeight: '100vh' },
+  greeting: { fontWeight: 'bold', fontSize: 20 },
+  subtext: { color: '#666', marginBottom: 24 },
+  cardButton: { background: '#fff', padding: 20, borderRadius: 14, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', marginBottom: 16, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 10 },
+  title: { fontWeight: 600, marginBottom: 16 },
+  input: { width: '100%', padding: '12px', borderRadius: 10, border: '1px solid #ccc', marginBottom: 12 },
+  marked: { background: '#e0f8e9', color: '#2e7d32', padding: 12, borderRadius: 10, marginBottom: 12 },
+  entryCard: { background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 16 },
+  entryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  trash: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 },
+  dashedBox: { border: '2px dashed #3f51b5', padding: 16, borderRadius: 12, textAlign: 'center', color: '#3f51b5', fontWeight: 500, marginBottom: 20, cursor: 'pointer' },
+  btnRow: { display: 'flex', gap: 10 },
+  primaryBtn: { flex: 1, background: '#3f51b5', color: '#fff', padding: 14, border: 'none', borderRadius: 10, cursor: 'pointer' },
+  outlineBtn: { flex: 1, background: '#fff', border: '1px solid #ccc', padding: 14, borderRadius: 10, cursor: 'pointer' },
+  back: { marginTop: 20, color: '#3f51b5', background: 'none', border: 'none', fontSize: 16, cursor: 'pointer' },
+  viewCard: { background: '#fff', padding: 16, borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }
 };

@@ -1,366 +1,302 @@
-// src/MainAttendanceApp.js
+// src/WorkReport.js
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import WorkReport from './WorkReport';
-import ViewWorkReports from './ViewWorkReports';
 
-export default function MainAttendanceApp({ user, onLogout }) {
-  const [screen, setScreen] = useState('home');
+export default function WorkReport({ onBack }) {
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState({});
-  const [rows, setRows] = useState([{ teamId: '', typeId: '', count: '' }]);
-  const [projectId, setProjectId] = useState('');
+  const [selectedProject, setSelectedProject] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [loading, setLoading] = useState(false);
-  const [attendanceMarked, setAttendanceMarked] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [viewResults, setViewResults] = useState([]);
+  const [works, setWorks] = useState([
+    {
+      description: '',
+      quantity: '',
+      uom: '',
+      labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+    },
+  ]);
+  const [attendanceMap, setAttendanceMap] = useState({});
+  const [remainingMap, setRemainingMap] = useState({});
 
+  // 1. Load projects, teams & types
   useEffect(() => {
-    fetchBaseData();
+    (async () => {
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      const { data: teamsData }   = await supabase.from('labour_teams').select('*');
+      const { data: typesData }   = await supabase.from('labour_types').select('*');
+
+      // build typeMap: team_id -> [types]
+      const typeMap = {};
+      typesData.forEach((t) => {
+        typeMap[t.team_id] = typeMap[t.team_id] || [];
+        typeMap[t.team_id].push(t);
+      });
+
+      setProjects(projectsData || []);
+      setTeams(teamsData || []);
+      setTypes(typeMap);
+    })();
   }, []);
 
+  // 2. When project or date changes, fetch attendance
   useEffect(() => {
-    if (projectId && date) checkAttendanceMarked();
-  }, [projectId, date]);
+    if (!selectedProject || !date) return;
 
-  async function fetchBaseData() {
-    const { data: projectsData } = await supabase.from('projects').select('*');
-    const { data: teamsData } = await supabase.from('labour_teams').select('*');
-    const { data: typesData } = await supabase.from('labour_types').select('*');
+    (async () => {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('project_id', selectedProject)
+        .eq('date', date);
 
-    const typeMap = {};
-    typesData.forEach((t) => {
-      if (!typeMap[t.team_id]) typeMap[t.team_id] = [];
-      typeMap[t.team_id].push(t);
+      if (!error && data) {
+        const attendance = {};
+        data.forEach((row) => {
+          const key = `${row.team_id}-${row.labour_type_id}`;
+          attendance[key] = (attendance[key] || 0) + row.count;
+        });
+        setAttendanceMap(attendance);
+        setRemainingMap(attendance); // start with full
+      }
+    })();
+  }, [selectedProject, date]);
+
+  // Recalculate remaining each time works change
+  const updateRemainingCounts = () => {
+    const used = {};
+    works.forEach((w) =>
+      w.labourAllotments.forEach((a) => {
+        const key = `${a.teamId}-${a.typeId}`;
+        used[key] = (used[key] || 0) + parseInt(a.count || '0', 10);
+      })
+    );
+    const remaining = {};
+    Object.keys(attendanceMap).forEach((key) => {
+      remaining[key] = attendanceMap[key] - (used[key] || 0);
     });
-
-    setProjects(projectsData || []);
-    setTeams(teamsData || []);
-    setTypes(typeMap);
-  }
-
-  async function checkAttendanceMarked() {
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('date', date);
-    if (error) return;
-    if (data.length > 0) {
-      setAttendanceMarked(true);
-      setRows(
-        data.map((r) => ({
-          teamId: String(r.team_id),
-          typeId: String(r.labour_type_id),
-          count: r.count.toString(),
-        }))
-      );
-    } else {
-      setAttendanceMarked(false);
-      setRows([{ teamId: '', typeId: '', count: '' }]);
-    }
-  }
-
-  const handleRowChange = (idx, field, val) => {
-    const u = [...rows];
-    u[idx][field] = val;
-    if (field === 'teamId') u[idx].typeId = '';
-    setRows(u);
+    setRemainingMap(remaining);
   };
 
-  const addRow = () =>
-    setRows([...rows, { teamId: '', typeId: '', count: '' }]);
-
-  const deleteRow = (idx) => {
-    const u = [...rows];
-    u.splice(idx, 1);
-    setRows(u.length ? u : [{ teamId: '', typeId: '', count: '' }]);
+  const handleWorkChange = (wIdx, field, value) => {
+    const updated = [...works];
+    updated[wIdx][field] = value;
+    setWorks(updated);
   };
+
+  const handleAllotmentChange = (wIdx, aIdx, field, value) => {
+    const updated = [...works];
+    const allot = updated[wIdx].labourAllotments[aIdx];
+    allot[field] = value;
+    if (field === 'teamId') allot.typeId = '';
+    setWorks(updated);
+    updateRemainingCounts();
+  };
+
+  const addWork = () =>
+    setWorks([
+      ...works,
+      {
+        description: '',
+        quantity: '',
+        uom: '',
+        labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+      },
+    ]);
+
+  const addAllotment = (wIdx) => {
+    const updated = [...works];
+    updated[wIdx].labourAllotments.push({ teamId: '', typeId: '', count: '' });
+    setWorks(updated);
+  };
+
+  const canSubmit = () => Object.values(remainingMap).every((v) => v === 0);
 
   const handleSubmit = async () => {
-    if (
-      !projectId ||
-      !date ||
-      rows.some((r) => !r.teamId || !r.typeId || !r.count)
-    ) {
-      alert('Please fill all fields');
-      return;
+    if (!canSubmit()) {
+      return alert('Please allot all labours before submitting.');
     }
-    setLoading(true);
-    await supabase
-      .from('attendance')
-      .delete()
-      .eq('project_id', projectId)
-      .eq('date', date);
 
-    const payload = rows.map((r) => ({
-      project_id: projectId,
-      date,
-      team_id: r.teamId,
-      labour_type_id: r.typeId,
-      count: parseInt(r.count, 10),
-    }));
+    // Insert report
+    const { data: report, error: reportErr } = await supabase
+      .from('work_reports')
+      .insert({
+        project_id: selectedProject,
+        date,
+        description: `Work Report for ${date}`,
+      })
+      .select()
+      .single();
 
-    const { error } = await supabase.from('attendance').insert(payload);
-    if (error) alert('Error: ' + error.message);
-    else {
-      alert('Attendance submitted!');
-      setShowPreview(false);
-      setAttendanceMarked(true);
+    if (reportErr || !report) {
+      return alert('Error submitting report.');
     }
-    setLoading(false);
-  };
 
-  const fetchAttendance = async () => {
-    if (!projectId || !date) return alert('Select project and date');
-    setLoading(true);
-    const { data } = await supabase
-      .from('attendance')
-      .select('count, labour_types(type_name), labour_teams(name)')
-      .eq('project_id', projectId)
-      .eq('date', date);
-    setViewResults(data || []);
-    setLoading(false);
+    // Insert each work allotment & its labours
+    for (const work of works) {
+      const { data: wa, error: waErr } = await supabase
+        .from('work_allotments')
+        .insert({
+          report_id: report.id,
+          work_description: work.description,
+          quantity: work.quantity,
+          uom: work.uom,
+        })
+        .select()
+        .single();
+
+      if (waErr || !wa) continue;
+
+      const labourRows = work.labourAllotments.map((a) => ({
+        report_id: report.id,
+        work_allotment_id: wa.id,
+        team_id: a.teamId,
+        labour_type_id: a.typeId,
+        count: parseInt(a.count, 10),
+      }));
+      await supabase.from('work_report_labours').insert(labourRows);
+    }
+
+    alert('✅ Work report submitted!');
+    onBack();
   };
 
   return (
-    <div
-      style={{
-        fontFamily: 'system-ui, sans-serif',
-        padding: 20,
-        background: '#f4f6f8',
-        minHeight: '100vh',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 460,
-          margin: '0 auto',
-          background: '#fff',
-          padding: 24,
-          borderRadius: 16,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
-        }}
+    <div>
+      <h3>Work Done Report</h3>
+
+      <select
+        style={input}
+        value={selectedProject}
+        onChange={(e) => setSelectedProject(e.target.value)}
       >
+        <option value="">-- Select Project --</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+
+      <input
+        type="date"
+        style={input}
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+      />
+
+      {works.map((work, wIdx) => (
         <div
+          key={wIdx}
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 20,
+            border: '1px solid #ccc',
+            padding: 12,
+            borderRadius: 10,
+            marginBottom: 12,
           }}
         >
-          <h2>🏗️ SiteTrack</h2>
-          <button onClick={onLogout} style={logoutBtn}>
-            Logout
-          </button>
-        </div>
+          <input
+            placeholder="Work Description"
+            style={input}
+            value={work.description}
+            onChange={(e) => handleWorkChange(wIdx, 'description', e.target.value)}
+          />
+          <input
+            placeholder="Quantity"
+            style={input}
+            value={work.quantity}
+            onChange={(e) => handleWorkChange(wIdx, 'quantity', e.target.value)}
+          />
+          <input
+            placeholder="UOM"
+            style={input}
+            value={work.uom}
+            onChange={(e) => handleWorkChange(wIdx, 'uom', e.target.value)}
+          />
 
-        {screen === 'home' && (
-          <>
-            <h3 style={{ marginBottom: 24 }}>
-              Welcome, {user.email.split('@')[0]}
-            </h3>
-            <button
-              style={primaryBtn}
-              onClick={() => setScreen('enter')}
-            >
-              ➕ Enter Attendance
-            </button>
-            <button
-              style={secondaryBtn}
-              onClick={() => setScreen('view')}
-            >
-              👁️ View Attendance
-            </button>
-            <button
-              style={secondaryBtn}
-              onClick={() => setScreen('work')}
-            >
-              📝 Work Done Report
-            </button>
-            <button
-              style={secondaryBtn}
-              onClick={() => setScreen('view-work')}
-            >
-              👁️ View Work Done Report
-            </button>
-          </>
-        )}
+          <p><strong>Allotted Labours</strong></p>
+          {work.labourAllotments.map((a, aIdx) => {
+            // only teams/types present in attendance
+            const filteredTeams = teams.filter((t) =>
+              Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`))
+            );
+            const filteredTypes = types[a.teamId]?.filter(
+              (t) => attendanceMap[`${a.teamId}-${t.id}`] > 0
+            ) || [];
 
-        {screen === 'view' && (
-          <div>
-            <h3>View Attendance</h3>
-            <select
-              style={input}
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">-- Select Project --</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              style={input}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-            <button style={primaryBtn} onClick={fetchAttendance}>
-              View
-            </button>
-            <ul>
-              {viewResults.map((r, i) => (
-                <li key={i}>
-                  {r.labour_teams.name} – {r.labour_types.type_name} –{' '}
-                  {r.count} nos
-                </li>
-              ))}
-            </ul>
-            <button
-              style={secondaryBtn}
-              onClick={() => setScreen('home')}
-            >
-              ← Back
-            </button>
-          </div>
-        )}
-
-        {screen === 'enter' && (
-          <div>
-            <h3>Enter Attendance</h3>
-            <select
-              style={input}
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">-- Select Project --</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              style={input}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-            {attendanceMarked && (
-              <p style={{ color: 'green' }}>✅ Attendance already marked</p>
-            )}
-            {rows.map((r, i) => (
-              <div
-                key={i}
-                style={{
-                  border: '1px solid #ddd',
-                  padding: 12,
-                  borderRadius: 10,
-                  marginBottom: 12,
-                }}
-              >
+            return (
+              <div key={aIdx}>
                 <select
                   style={input}
-                  value={r.teamId}
+                  value={a.teamId}
                   onChange={(e) =>
-                    handleRowChange(i, 'teamId', e.target.value)
+                    handleAllotmentChange(wIdx, aIdx, 'teamId', e.target.value)
                   }
                 >
                   <option value="">Select Team</option>
-                  {teams.map((t) => (
+                  {filteredTeams.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
                   ))}
                 </select>
+
                 <select
                   style={input}
-                  value={r.typeId}
+                  value={a.typeId}
                   onChange={(e) =>
-                    handleRowChange(i, 'typeId', e.target.value)
+                    handleAllotmentChange(wIdx, aIdx, 'typeId', e.target.value)
                   }
                 >
-                  <option value="">Select Labour Type</option>
-                  {(types[r.teamId] || []).map((t) => (
+                  <option value="">Select Type</option>
+                  {filteredTypes.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.type_name}
                     </option>
                   ))}
                 </select>
+
                 <input
                   type="number"
-                  placeholder="No. of Workers"
+                  placeholder="Count"
                   style={input}
-                  value={r.count}
+                  value={a.count}
                   onChange={(e) =>
-                    handleRowChange(i, 'count', e.target.value)
+                    handleAllotmentChange(wIdx, aIdx, 'count', e.target.value)
                   }
                 />
-                <button
-                  onClick={() => deleteRow(i)}
-                  style={{ background: 'transparent', color: 'red', border: 'none' }}
-                >
-                  🗑️
-                </button>
-              </div>
-            ))}
-            <button style={secondaryBtn} onClick={addRow}>
-              + Add Team
-            </button>
-            <button
-              style={secondaryBtn}
-              onClick={() => setShowPreview(true)}
-            >
-              👁️ Preview Summary
-            </button>
-            {showPreview && (
-              <div style={{ marginTop: 12 }}>
-                <h4>Summary</h4>
-                <ul>
-                  {rows.map((r, i) => {
-                    const tName =
-                      teams.find((t) => String(t.id) === r.teamId)?.name ||
-                      'Unknown Team';
-                    const tyName =
-                      types[r.teamId]?.find(
-                        (t) => String(t.id) === r.typeId
-                      )?.type_name || 'Unknown Type';
-                    return (
-                      <li key={i}>
-                        {tName} – {tyName} – {r.count} nos
-                      </li>
-                    );
-                  })}
-                </ul>
-                <button style={primaryBtn} onClick={handleSubmit}>
-                  ✅ Submit Attendance
-                </button>
-              </div>
-            )}
-            <button
-              style={secondaryBtn}
-              onClick={() => setScreen('home')}
-            >
-              ← Back
-            </button>
-          </div>
-        )}
 
-        {screen === 'work' && (
-          <WorkReport
-            onBack={() => setScreen('home')}
-          />
-        )}
-        {screen === 'view-work' && (
-          <ViewWorkReports onBack={() => setScreen('home')} />
-        )}
-      </div>
+                {a.teamId && a.typeId && (
+                  <p style={{ color: 'red' }}>
+                    Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos
+                  </p>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            style={secondaryBtn}
+            onClick={() => addAllotment(wIdx)}
+          >
+            + Add Labour
+          </button>
+        </div>
+      ))}
+
+      <button style={secondaryBtn} onClick={addWork}>
+        + Add Work
+      </button>
+      <button
+        style={primaryBtn}
+        onClick={handleSubmit}
+        disabled={!canSubmit()}
+      >
+        ✅ Submit Work Report
+      </button>
+      <button style={secondaryBtn} onClick={onBack}>
+        ← Back
+      </button>
     </div>
   );
 }
@@ -396,14 +332,5 @@ const secondaryBtn = {
   width: '100%',
   fontSize: 16,
   marginBottom: 12,
-  cursor: 'pointer',
-};
-
-// logout button style (small, inline)
-const logoutBtn = {
-  border: 'none',
-  background: '#eee',
-  padding: '6px 12px',
-  borderRadius: 8,
   cursor: 'pointer',
 };

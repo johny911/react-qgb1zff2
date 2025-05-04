@@ -8,6 +8,7 @@ export default function WorkReport({ onBack }) {
   const [types, setTypes] = useState({});
   const [selectedProject, setSelectedProject] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [reportDescription, setReportDescription] = useState('');
   const [works, setWorks] = useState([
     {
       description: '',
@@ -124,51 +125,45 @@ export default function WorkReport({ onBack }) {
       return;
     }
 
-    try {
-      const { data: reportInsert, error: reportError } = await supabase
-        .from('work_reports')
-        .insert({ date, project_id: selectedProject })
+    const { data: reportInsert, error: reportError } = await supabase
+      .from('work_reports')
+      .insert({
+        date,
+        project_id: selectedProject,
+        description: reportDescription || 'Work done report submitted via app'
+      })
+      .select()
+      .single();
+
+    if (reportError || !reportInsert) return alert('Error submitting report');
+
+    for (const work of works) {
+      const { data: workData, error: workError } = await supabase
+        .from('work_allotments')
+        .insert({
+          report_id: reportInsert.id,
+          work_description: work.description,
+          quantity: work.quantity,
+          uom: work.uom,
+        })
         .select()
         .single();
 
-      if (reportError || !reportInsert) throw reportError;
+      if (workError) continue;
 
-      for (const work of works) {
-        if (!work.description || !work.quantity || !work.uom) continue;
+      const laboursPayload = work.labourAllotments.map((a) => ({
+        report_id: reportInsert.id,
+        work_allotment_id: workData.id,
+        team_id: a.teamId,
+        labour_type_id: a.typeId,
+        count: parseInt(a.count),
+      }));
 
-        const { data: workData, error: workError } = await supabase
-          .from('work_allotments')
-          .insert({
-            report_id: reportInsert.id,
-            work_description: work.description,
-            quantity: work.quantity,
-            uom: work.uom,
-          })
-          .select()
-          .single();
-
-        if (workError || !workData) continue;
-
-        const laboursPayload = work.labourAllotments
-          .filter((a) => a.teamId && a.typeId && a.count)
-          .map((a) => ({
-            report_id: reportInsert.id,
-            work_allotment_id: workData.id,
-            team_id: parseInt(a.teamId),
-            labour_type_id: parseInt(a.typeId),
-            count: parseInt(a.count),
-          }));
-
-        if (laboursPayload.length)
-          await supabase.from('work_report_labours').insert(laboursPayload);
-      }
-
-      alert('✅ Work report submitted!');
-      onBack();
-    } catch (e) {
-      console.error(e);
-      alert('Error submitting report. See console for details.');
+      await supabase.from('work_report_labours').insert(laboursPayload);
     }
+
+    alert('✅ Work report submitted!');
+    onBack();
   };
 
   return (
@@ -181,6 +176,7 @@ export default function WorkReport({ onBack }) {
         ))}
       </select>
       <input type='date' style={input} value={date} onChange={(e) => setDate(e.target.value)} />
+      <input placeholder='Report Description' style={input} value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} />
 
       {works.map((work, wIdx) => (
         <div key={wIdx} style={{ border: '1px solid #ccc', padding: 12, borderRadius: 10, marginBottom: 12 }}>
@@ -189,7 +185,9 @@ export default function WorkReport({ onBack }) {
           <input placeholder='UOM' style={input} value={work.uom} onChange={(e) => handleWorkChange(wIdx, 'uom', e.target.value)} />
           <p><strong>Allotted Labours</strong></p>
           {work.labourAllotments.map((a, aIdx) => {
-            const filteredTeams = teams.filter((t) => Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`)));
+            const filteredTeams = teams.filter((t) =>
+              Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`))
+            );
             const filteredTypes = types[a.teamId]?.filter((t) => attendanceMap[`${a.teamId}-${t.id}`]) || [];
             return (
               <div key={aIdx}>

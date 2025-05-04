@@ -63,25 +63,6 @@ export default function WorkReport({ onBack }) {
     setRemainingMap({ ...attendance });
   };
 
-  const handleWorkChange = (index, field, value) => {
-    const updated = [...works];
-    updated[index][field] = value;
-    setWorks(updated);
-  };
-
-  const handleAllotmentChange = (wIdx, aIdx, field, value) => {
-    const updated = [...works];
-    const allotment = updated[wIdx].labourAllotments[aIdx];
-    allotment[field] = value;
-    if (field === 'teamId') allotment.typeId = '';
-    setWorks(updated);
-
-    // update remaining map
-    if (field === 'count') {
-      updateRemainingCounts();
-    }
-  };
-
   const updateRemainingCounts = () => {
     const used = {};
     works.forEach((w) => {
@@ -95,6 +76,21 @@ export default function WorkReport({ onBack }) {
       remaining[key] = attendanceMap[key] - (used[key] || 0);
     }
     setRemainingMap(remaining);
+  };
+
+  const handleWorkChange = (index, field, value) => {
+    const updated = [...works];
+    updated[index][field] = value;
+    setWorks(updated);
+  };
+
+  const handleAllotmentChange = (wIdx, aIdx, field, value) => {
+    const updated = [...works];
+    const allotment = updated[wIdx].labourAllotments[aIdx];
+    allotment[field] = value;
+    if (field === 'teamId') allotment.typeId = '';
+    setWorks(updated);
+    updateRemainingCounts();
   };
 
   const addWork = () => {
@@ -122,6 +118,49 @@ export default function WorkReport({ onBack }) {
     return true;
   };
 
+  const handleSubmit = async () => {
+    if (!canSubmit()) {
+      alert('Please allot all labours before submitting');
+      return;
+    }
+
+    const { data: reportInsert, error: reportError } = await supabase
+      .from('work_reports')
+      .insert({ date, project_id: selectedProject })
+      .select()
+      .single();
+
+    if (reportError || !reportInsert) return alert('Error submitting report');
+
+    for (const work of works) {
+      const { data: workData, error: workError } = await supabase
+        .from('work_allotments')
+        .insert({
+          report_id: reportInsert.id,
+          work_description: work.description,
+          quantity: work.quantity,
+          uom: work.uom,
+        })
+        .select()
+        .single();
+
+      if (workError) continue;
+
+      const laboursPayload = work.labourAllotments.map((a) => ({
+        report_id: reportInsert.id,
+        work_allotment_id: workData.id,
+        team_id: a.teamId,
+        labour_type_id: a.typeId,
+        count: parseInt(a.count),
+      }));
+
+      await supabase.from('work_report_labours').insert(laboursPayload);
+    }
+
+    alert('✅ Work report submitted!');
+    onBack();
+  };
+
   return (
     <div>
       <h3>Work Done Report</h3>
@@ -140,12 +179,10 @@ export default function WorkReport({ onBack }) {
           <input placeholder='UOM' style={input} value={work.uom} onChange={(e) => handleWorkChange(wIdx, 'uom', e.target.value)} />
           <p><strong>Allotted Labours</strong></p>
           {work.labourAllotments.map((a, aIdx) => {
-            const filteredTeams = teams.filter((t) => {
-              return Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`));
-            });
-            const filteredTypes = types[a.teamId]?.filter((t) => {
-              return attendanceMap[`${a.teamId}-${t.id}`];
-            }) || [];
+            const filteredTeams = teams.filter((t) =>
+              Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`))
+            );
+            const filteredTypes = types[a.teamId]?.filter((t) => attendanceMap[`${a.teamId}-${t.id}`]) || [];
             return (
               <div key={aIdx}>
                 <select style={input} value={a.teamId} onChange={(e) => handleAllotmentChange(wIdx, aIdx, 'teamId', e.target.value)}>
@@ -173,7 +210,7 @@ export default function WorkReport({ onBack }) {
         </div>
       ))}
       <button style={secondaryBtn} onClick={addWork}>+ Add Work</button>
-      <button style={primaryBtn} disabled={!canSubmit()}>✅ Submit Work Report</button>
+      <button style={primaryBtn} disabled={!canSubmit()} onClick={handleSubmit}>✅ Submit Work Report</button>
       <button style={secondaryBtn} onClick={onBack}>← Back</button>
     </div>
   );

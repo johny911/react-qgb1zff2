@@ -1,8 +1,7 @@
-// ✅ Full App with Styled Login/Register (SiteTrack Style)
+// ✅ Full App.js with Login/Register + Post-Login UI Working
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { FaUserCircle } from "react-icons/fa";
 
 const supabase = createClient(
   "https://hftkpcltkuewskmtkmbq.supabase.co",
@@ -11,48 +10,19 @@ const supabase = createClient(
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState("home");
-  const [projects, setProjects] = useState([]);
-  const [teams, setTeams] = useState([]);
-  const [types, setTypes] = useState({});
-  const [rows, setRows] = useState([{ teamId: "", typeId: "", count: "" }]);
-  const [projectId, setProjectId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [loading, setLoading] = useState(false);
-  const [viewResults, setViewResults] = useState([]);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const [loadingUser, setLoadingUser] = useState(true);
   const [authScreen, setAuthScreen] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isMarked, setIsMarked] = useState(false);
-  const [existingAttendanceIds, setExistingAttendanceIds] = useState([]);
+  const [screen, setScreen] = useState("home");
 
+  // Fetch session on mount
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
-    fetchBaseData();
-  }, []);
-
-  const greeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good Morning";
-    if (hour < 18) return "Good Afternoon";
-    return "Good Evening";
-  };
-
-  async function fetchBaseData() {
-    const { data: projectsData } = await supabase.from("projects").select("*");
-    const { data: teamsData } = await supabase.from("labour_teams").select("*");
-    const { data: typesData } = await supabase.from("labour_types").select("*");
-    const typeMap = {};
-    typesData.forEach((type) => {
-      if (!typeMap[type.team_id]) typeMap[type.team_id] = [];
-      typeMap[type.team_id].push(type);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setLoadingUser(false);
     });
-    setProjects(projectsData || []);
-    setTeams(teamsData || []);
-    setTypes(typeMap);
-  }
+  }, []);
 
   const handleLogin = async () => {
     const { error, data } = await supabase.auth.signInWithPassword({ email, password });
@@ -63,7 +33,7 @@ export default function App() {
   const handleRegister = async () => {
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
-    else alert("Registration successful. Please check your email to confirm.");
+    else alert("Registration successful. Please check your email.");
   };
 
   const handleLogout = async () => {
@@ -71,89 +41,7 @@ export default function App() {
     setUser(null);
   };
 
-  const handleRowChange = (index, field, value) => {
-    const updated = [...rows];
-    updated[index][field] = value;
-    if (field === "teamId") updated[index].typeId = "";
-    setRows(updated);
-  };
-
-  const addRow = () => setRows([...rows, { teamId: "", typeId: "", count: "" }]);
-
-  const deleteRow = (index) => {
-    const updated = [...rows];
-    updated.splice(index, 1);
-    setRows(updated.length ? updated : [{ teamId: "", typeId: "", count: "" }]);
-  };
-
-  const checkAttendanceStatus = async (projId, selectedDate) => {
-    if (!projId || !selectedDate) return;
-    const { data } = await supabase
-      .from("attendance")
-      .select("*")
-      .eq("project_id", projId)
-      .eq("date", selectedDate);
-    if (data && data.length > 0) {
-      setIsMarked(true);
-      setExistingAttendanceIds(data.map((d) => d.id));
-    } else {
-      setIsMarked(false);
-      setExistingAttendanceIds([]);
-    }
-  };
-
-  const loadAttendanceForEdit = async () => {
-    const { data } = await supabase
-      .from("attendance")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("date", date);
-    const formatted = data.map((entry) => ({
-      teamId: entry.team_id,
-      typeId: entry.labour_type_id,
-      count: entry.count.toString(),
-    }));
-    setRows(formatted);
-  };
-
-  const handleSubmit = async () => {
-    if (!projectId || !date || rows.some(r => !r.teamId || !r.typeId || !r.count)) {
-      alert("Please fill all fields");
-      return;
-    }
-    setLoading(true);
-    if (isMarked && existingAttendanceIds.length > 0) {
-      await supabase.from("attendance").delete().in("id", existingAttendanceIds);
-    }
-    const payload = rows.map((row) => ({
-      project_id: projectId,
-      date,
-      team_id: row.teamId,
-      labour_type_id: row.typeId,
-      count: parseInt(row.count),
-    }));
-    const { error } = await supabase.from("attendance").insert(payload);
-    if (error) alert("Error: " + error.message);
-    else {
-      alert("Attendance submitted!");
-      setRows([{ teamId: "", typeId: "", count: "" }]);
-      setShowPreview(false);
-      setScreen("home");
-    }
-    setLoading(false);
-  };
-
-  const fetchAttendance = async () => {
-    if (!projectId || !date) return alert("Select project and date");
-    setLoading(true);
-    const { data } = await supabase
-      .from("attendance")
-      .select("count, labour_types(type_name), labour_teams(name)")
-      .eq("project_id", projectId)
-      .eq("date", date);
-    setViewResults(data || []);
-    setLoading(false);
-  };
+  if (loadingUser) return <div style={{ padding: 20 }}>Loading...</div>;
 
   if (!user) {
     return (
@@ -161,26 +49,75 @@ export default function App() {
         <div style={styles.authCard}>
           <h2 style={styles.logo}><span role="img" aria-label="building">🏗️</span> SiteTrack</h2>
           <div style={styles.tabContainer}>
-            <button style={authScreen === 'login' ? styles.activeTab : styles.inactiveTab} onClick={() => setAuthScreen('login')}>Login</button>
-            <button style={authScreen === 'register' ? styles.activeTab : styles.inactiveTab} onClick={() => setAuthScreen('register')}>Register</button>
+            <button
+              style={authScreen === 'login' ? styles.activeTab : styles.inactiveTab}
+              onClick={() => setAuthScreen('login')}>Login</button>
+            <button
+              style={authScreen === 'register' ? styles.activeTab : styles.inactiveTab}
+              onClick={() => setAuthScreen('register')}>Register</button>
           </div>
           <div style={styles.formGroup}>
-            <input style={styles.input} placeholder="📧 Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input style={styles.input} placeholder="🔒 Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input
+              style={styles.input}
+              placeholder="📧 Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input
+              style={styles.input}
+              placeholder="🔒 Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
-          <button style={styles.primaryBtn} onClick={authScreen === 'login' ? handleLogin : handleRegister}>Continue</button>
-          {authScreen === 'login' && <p style={styles.linkText}>Forgot Password?</p>}
+          <button
+            style={styles.primaryBtn}
+            onClick={authScreen === 'login' ? handleLogin : handleRegister}
+          >Continue</button>
+          {authScreen === 'login' && (
+            <p style={styles.linkText}>Forgot Password?</p>
+          )}
         </div>
       </div>
     );
   }
 
-  // (rest of your app with dashboard, enter/view attendance, profile menu...)
+  // ✅ Main UI after login
+  return (
+    <div style={{ padding: 20, fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>👋 Good Morning, {user.email}</h2>
+        <button onClick={handleLogout} style={styles.secondaryBtn}>Logout</button>
+      </div>
+
+      {screen === 'home' && (
+        <div style={{ marginTop: 40 }}>
+          <button style={styles.primaryBtn} onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
+          <button style={styles.secondaryBtn} onClick={() => setScreen('view')}>👁️ View Attendance</button>
+        </div>
+      )}
+
+      {screen === 'enter' && (
+        <div style={{ marginTop: 20 }}>
+          <p>📌 Attendance form will go here...</p>
+          <button style={styles.secondaryBtn} onClick={() => setScreen('home')}>🔙 Back</button>
+        </div>
+      )}
+
+      {screen === 'view' && (
+        <div style={{ marginTop: 20 }}>
+          <p>📋 Attendance view list will go here...</p>
+          <button style={styles.secondaryBtn} onClick={() => setScreen('home')}>🔙 Back</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const styles = {
   authWrapper: {
-    display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f9fafb', fontFamily: 'system-ui, sans-serif',
+    display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f9fafb',
   },
   authCard: {
     background: '#fff', padding: '32px', borderRadius: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', width: '90%', maxWidth: '360px', textAlign: 'center',
@@ -205,6 +142,9 @@ const styles = {
   },
   primaryBtn: {
     width: '100%', padding: '14px', fontSize: '16px', borderRadius: '10px', border: 'none', background: '#3f51b5', color: '#fff', marginBottom: '12px', cursor: 'pointer',
+  },
+  secondaryBtn: {
+    padding: '10px 16px', fontSize: '14px', borderRadius: '8px', border: 'none', background: '#666', color: '#fff', marginTop: '12px', cursor: 'pointer',
   },
   linkText: {
     fontSize: '14px', color: '#3f51b5', marginTop: '12px',

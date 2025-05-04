@@ -29,7 +29,7 @@ export default function ViewWorkReports({ onBack }) {
       .eq('project_id', selectedProject)
       .eq('date', date);
 
-    if (headerError || !reportHeaders || reportHeaders.length === 0) {
+    if (headerError || !reportHeaders?.length) {
       setLoading(false);
       return alert('No reports found.');
     }
@@ -43,7 +43,7 @@ export default function ViewWorkReports({ onBack }) {
         work_description,
         quantity,
         uom,
-        work_report_labours (
+        work_report_labours:work_report_labours (
           count,
           labour_types (type_name),
           labour_teams (name)
@@ -53,6 +53,7 @@ export default function ViewWorkReports({ onBack }) {
 
     if (workError) {
       alert('Error loading report.');
+      console.error(workError);
       setLoading(false);
       return;
     }

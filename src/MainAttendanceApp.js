@@ -198,13 +198,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
               <div style={{ marginTop: 12 }}>
                 <h4>Summary</h4>
                 <ul>
-                  {rows.map((r, i) => (
-                    <li key={i}>
-                      {teams.find((t) => t.id === r.teamId)?.name} –
-                      {types[r.teamId]?.find((t) => t.id === r.typeId)?.type_name} –
-                      {r.count} nos
-                    </li>
-                  ))}
+                  {rows.map((r, i) => {
+                    const teamName = teams.find((t) => t.id.toString() === r.teamId)?.name || 'Unknown Team';
+                    const typeName = types[r.teamId]?.find((t) => t.id.toString() === r.typeId)?.type_name || 'Unknown Type';
+                    return (
+                      <li key={i}>{teamName} – {typeName} – {r.count} nos</li>
+                    );
+                  })}
                 </ul>
                 <button style={primaryBtn} onClick={handleSubmit}>✅ Submit Attendance</button>
               </div>

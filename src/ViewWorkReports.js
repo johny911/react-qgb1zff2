@@ -14,32 +14,48 @@ export default function ViewWorkReports({ onBack }) {
   }, []);
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('*');
-    setProjects(data || []);
+    const { data, error } = await supabase.from('projects').select('*');
+    if (!error) setProjects(data || []);
   };
 
   const fetchReports = async () => {
     if (!selectedProject || !date) return alert('Select project and date');
     setLoading(true);
+    setReports([]);
 
-    const { data: reportHeaders, error } = await supabase
+    const { data: reportHeaders, error: headerError } = await supabase
       .from('work_reports')
       .select('id')
       .eq('project_id', selectedProject)
       .eq('date', date);
 
-    if (error || !reportHeaders.length) {
-      setReports([]);
+    if (headerError || !reportHeaders || reportHeaders.length === 0) {
       setLoading(false);
       return alert('No reports found.');
     }
 
     const reportId = reportHeaders[0].id;
 
-    const { data: workData } = await supabase
+    const { data: workData, error: workError } = await supabase
       .from('work_allotments')
-      .select('id, work_description, quantity, uom, work_report_labours(count, labour_types(type_name), labour_teams(name))')
+      .select(`
+        id,
+        work_description,
+        quantity,
+        uom,
+        work_report_labours (
+          count,
+          labour_types (type_name),
+          labour_teams (name)
+        )
+      `)
       .eq('report_id', reportId);
+
+    if (workError) {
+      alert('Error loading report.');
+      setLoading(false);
+      return;
+    }
 
     setReports(workData || []);
     setLoading(false);
@@ -64,15 +80,20 @@ export default function ViewWorkReports({ onBack }) {
           <p><strong>Work:</strong> {w.work_description}</p>
           <p><strong>Qty:</strong> {w.quantity} {w.uom}</p>
           <p><strong>Labours:</strong></p>
-          <ul>
-            {w.work_report_labours.map((l, idx) => (
-              <li key={idx}>
-                {l.labour_teams.name} – {l.labour_types.type_name} – {l.count} nos
-              </li>
-            ))}
-          </ul>
+          {w.work_report_labours?.length > 0 ? (
+            <ul>
+              {w.work_report_labours.map((l, idx) => (
+                <li key={idx}>
+                  {l.labour_teams?.name || 'Unknown Team'} – {l.labour_types?.type_name || 'Unknown Type'} – {l.count} nos
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p style={{ color: 'gray' }}>No labours recorded for this work</p>
+          )}
         </div>
       ))}
+
       <button style={secondaryBtn} onClick={onBack}>← Back</button>
     </div>
   );

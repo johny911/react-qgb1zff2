@@ -5,63 +5,87 @@ import { supabase } from './supabaseClient';
 export default function ViewWorkReports({ onBack }) {
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [typesMap, setTypesMap] = useState({});
+  const [types, setTypes] = useState({});
   const [selectedProject, setSelectedProject] = useState('');
   const [date, setDate] = useState(() =>
     new Date().toISOString().split('T')[0]
   );
-  const [reports, setReports] = useState([]);
+  const [works, setWorks] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // 1) fetch projects, teams, and labour‐types upfront
   useEffect(() => {
-    const fetchBase = async () => {
-      const [{ data: proj }, { data: tm }, { data: tp }] = await Promise.all([
-        supabase.from('projects').select('*'),
-        supabase.from('labour_teams').select('*'),
-        supabase.from('labour_types').select('*'),
-      ]);
-
-      setProjects(proj || []);
-      setTeams(tm || []);
-
-      // build a map: typesMap[team_id] = [ {id,type_name}, … ]
-      const map = {};
-      (tp || []).forEach((t) => {
-        map[t.team_id] = map[t.team_id] || [];
-        map[t.team_id].push(t);
-      });
-      setTypesMap(map);
-    };
-    fetchBase();
+    fetchProjects();
+    fetchTeamsAndTypes();
   }, []);
 
-  // 2) fetch the work_reports rows for this project + date
+  // 1. load projects for the dropdown
+  const fetchProjects = async () => {
+    const { data, error } = await supabase.from('projects').select('*');
+    if (!error) setProjects(data || []);
+  };
+
+  // 2. load teams + types so we can map IDs → names
+  const fetchTeamsAndTypes = async () => {
+    const { data: teamsData } = await supabase
+      .from('labour_teams')
+      .select('id, name');
+    const { data: typesData } = await supabase
+      .from('labour_types')
+      .select('id, team_id, type_name');
+
+    const typeMap = {};
+    (typesData || []).forEach((t) => {
+      if (!typeMap[t.team_id]) typeMap[t.team_id] = [];
+      typeMap[t.team_id].push(t);
+    });
+
+    setTeams(teamsData || []);
+    setTypes(typeMap);
+  };
+
+  // 3. fetch the work items (with JSONB labour_allotments) for that report
   const fetchReports = async () => {
     if (!selectedProject || !date) {
-      alert('Select project and date');
-      return;
+      return alert('Please select a project and date');
     }
     setLoading(true);
-    const { data, error } = await supabase
-      .from('work_reports')
-      .select('description, quantity, uom, labour_allotments')
-      .eq('project_id', selectedProject)
-      .eq('date', date);
+    setWorks([]);
 
-    if (error) {
-      console.error('Error loading reports:', error);
-      alert('Error loading report.');
-    } else {
-      if (!data.length) alert('No reports found.');
-      setReports(data);
+    // find the report header
+    const { data: headers, error: hErr } = await supabase
+      .from('work_reports')
+      .select('id')
+      .eq('project_id', selectedProject)
+      .eq('date', date)
+      .limit(1);
+
+    if (hErr || !headers || headers.length === 0) {
+      setLoading(false);
+      return alert('No work report found for that date/project');
     }
+    const reportId = headers[0].id;
+
+    // now grab all the work_allotments rows for that report
+    const { data: workData, error: wErr } = await supabase
+      .from('work_allotments')
+      .select('id, work_description, quantity, uom, labour_allotments')
+      .eq('report_id', reportId);
+
+    if (wErr) {
+      console.error(wErr);
+      alert('Error loading report');
+      setLoading(false);
+      return;
+    }
+
+    setWorks(workData || []);
     setLoading(false);
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: 460, margin: '0 auto' }}>
+    <div style={{ padding: 20, maxWidth: 600, margin: '0 auto' }}>
       <h3>View Work Done Report</h3>
+
       <select
         style={input}
         value={selectedProject}
@@ -74,28 +98,30 @@ export default function ViewWorkReports({ onBack }) {
           </option>
         ))}
       </select>
+
       <input
         type="date"
         style={input}
         value={date}
         onChange={(e) => setDate(e.target.value)}
       />
+
       <button style={primaryBtn} onClick={fetchReports} disabled={loading}>
         {loading ? 'Loading…' : '🔍 View Report'}
       </button>
 
-      {reports.map((w, i) => (
+      {works.map((w, i) => (
         <div
           key={i}
           style={{
-            border: '1px solid #ccc',
+            border: '1px solid #ddd',
             borderRadius: 8,
             padding: 12,
             marginTop: 12,
           }}
         >
           <p>
-            <strong>Work:</strong> {w.description}
+            <strong>Work:</strong> {w.work_description}
           </p>
           <p>
             <strong>Qty:</strong> {w.quantity} {w.uom}
@@ -103,19 +129,23 @@ export default function ViewWorkReports({ onBack }) {
           <p>
             <strong>Labours:</strong>
           </p>
-          <ul style={{ marginLeft: 16 }}>
-            {w.labour_allotments.map((a, idx) => {
-              const team = teams.find((t) => t.id === a.teamId);
-              const labTypes = typesMap[a.teamId] || [];
-              const type = labTypes.find((t) => t.id === a.typeId);
-              return (
+          {Array.isArray(w.labour_allotments) &&
+          w.labour_allotments.length > 0 ? (
+            <ul>
+              {w.labour_allotments.map((a, idx) => (
                 <li key={idx}>
-                  {team?.name || 'Unknown Team'} –{' '}
-                  {type?.type_name || 'Unknown Type'} – {a.count} nos
+                  {teams.find((t) => t.id === a.teamId)?.name ||
+                    'Unknown Team'}{' '}
+                  –{' '}
+                  {types[a.teamId]?.find((t) => t.id === a.typeId)
+                    ?.type_name || 'Unknown Type'}{' '}
+                  – {a.count} nos
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          ) : (
+            <p style={{ color: '#666' }}>No labours recorded</p>
+          )}
         </div>
       ))}
 
@@ -131,31 +161,29 @@ const input = {
   padding: 12,
   marginBottom: 12,
   fontSize: 16,
-  borderRadius: 10,
+  borderRadius: 8,
   border: '1px solid #ccc',
   boxSizing: 'border-box',
 };
 
 const primaryBtn = {
   background: '#3b6ef6',
-  color: '#fff',
-  padding: 14,
-  borderRadius: 10,
+  color: 'white',
+  padding: '12px 0',
   border: 'none',
+  borderRadius: 8,
   width: '100%',
   fontSize: 16,
-  marginBottom: 12,
   cursor: 'pointer',
 };
 
 const secondaryBtn = {
   background: '#eee',
   color: '#333',
-  padding: 12,
-  borderRadius: 10,
+  padding: '12px 0',
   border: 'none',
+  borderRadius: 8,
   width: '100%',
   fontSize: 16,
-  marginBottom: 12,
   cursor: 'pointer',
 };

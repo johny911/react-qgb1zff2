@@ -1,182 +1,272 @@
-// src/ViewWorkReports.js
+// src/WorkReport.js
 import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
-export default function ViewWorkReports({ onBack }) {
+export default function WorkReport({ onBack }) {
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
-  const [typesMap, setTypesMap] = useState({})
+  const [types, setTypes] = useState({})
   const [selectedProject, setSelectedProject] = useState('')
   const [date, setDate] = useState(() =>
     new Date().toISOString().split('T')[0]
   )
-  const [works, setWorks] = useState([])
+  const [works, setWorks] = useState([
+    {
+      description: '',
+      quantity: '',
+      uom: '',
+      labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+    },
+  ])
+  const [attendanceMap, setAttendanceMap] = useState({})
+  const [remainingMap, setRemainingMap] = useState({})
   const [loading, setLoading] = useState(false)
 
-  // 1) Load projects, teams, and types on mount
   useEffect(() => {
-    fetchProjects()
-    fetchTeamsAndTypes()
+    fetchBaseData()
   }, [])
 
-  async function fetchProjects() {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('id, name')
-    if (!error) setProjects(data || [])
+  useEffect(() => {
+    if (selectedProject && date) {
+      fetchAttendance()
+    }
+  }, [selectedProject, date])
+
+  async function fetchBaseData() {
+    const { data: projectsData } = await supabase.from('projects').select('*')
+    const { data: teamsData } = await supabase
+      .from('labour_teams')
+      .select('*')
+    const { data: typesData } = await supabase
+      .from('labour_types')
+      .select('*')
+
+    const typeMap = {}
+    typesData.forEach((t) => {
+      if (!typeMap[t.team_id]) typeMap[t.team_id] = []
+      typeMap[t.team_id].push(t)
+    })
+
+    setProjects(projectsData || [])
+    setTeams(teamsData || [])
+    setTypes(typeMap)
   }
 
-  async function fetchTeamsAndTypes() {
-    const [{ data: tData = [] }, { data: typeData = [] }] = await Promise.all([
-      supabase.from('labour_teams').select('id, name'),
-      supabase.from('labour_types').select('id, team_id, type_name'),
+  async function fetchAttendance() {
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('project_id', selectedProject)
+      .eq('date', date)
+
+    if (error) {
+      console.error('fetchAttendance error:', error)
+      return
+    }
+    const att = {}
+    data.forEach((r) => {
+      const key = `${r.team_id}-${r.labour_type_id}`
+      att[key] = (att[key] || 0) + r.count
+    })
+    setAttendanceMap(att)
+    setRemainingMap({ ...att })
+  }
+
+  function updateRemainingCounts() {
+    const used = {}
+    works.forEach((w) =>
+      w.labourAllotments.forEach((a) => {
+        const key = `${a.teamId}-${a.typeId}`
+        used[key] = (used[key] || 0) + parseInt(a.count || '0')
+      })
+    )
+    const rem = {}
+    for (const key in attendanceMap) {
+      rem[key] = attendanceMap[key] - (used[key] || 0)
+    }
+    setRemainingMap(rem)
+  }
+
+  const handleWorkChange = (wIdx, field, val) => {
+    const copy = [...works]
+    copy[wIdx][field] = val
+    setWorks(copy)
+  }
+
+  const handleAllotmentChange = (wIdx, aIdx, field, val) => {
+    const copy = [...works]
+    const a = copy[wIdx].labourAllotments[aIdx]
+    a[field] = val
+    if (field === 'teamId') a.typeId = ''
+    setWorks(copy)
+    updateRemainingCounts()
+  }
+
+  const addWork = () =>
+    setWorks([
+      ...works,
+      { description: '', quantity: '', uom: '', labourAllotments: [{ teamId: '', typeId: '', count: '' }] },
     ])
 
-    setTeams(tData)
-    // build a map: team_id → [types]
-    const map = {}
-    typeData.forEach((t) => {
-      map[t.team_id] = map[t.team_id] || []
-      map[t.team_id].push(t)
-    })
-    setTypesMap(map)
+  const addAllotment = (wIdx) => {
+    const copy = [...works]
+    copy[wIdx].labourAllotments.push({ teamId: '', typeId: '', count: '' })
+    setWorks(copy)
   }
 
-  // 2) Fetch the report + its work entries + labours
-  const fetchReports = async () => {
-    if (!selectedProject || !date) {
-      alert('Select project and date')
+  const canSubmit = () =>
+    Object.values(remainingMap).every((v) => v === 0) &&
+    selectedProject &&
+    date &&
+    works.every(
+      (w) =>
+        w.description &&
+        w.quantity &&
+        w.uom &&
+        w.labourAllotments.every((a) => a.teamId && a.typeId && a.count)
+    )
+
+  const handleSubmit = async () => {
+    if (!canSubmit()) {
+      alert('Please fill all fields and allot all labours.')
       return
     }
     setLoading(true)
-    setWorks([])
 
-    // a) latest report header
-    const { data: headers = [], error: hdrErr } = await supabase
+    // 1️⃣ Create report header
+    const { data: rpt, error: rptErr } = await supabase
       .from('work_reports')
-      .select('id')
-      .eq('project_id', selectedProject)
-      .eq('date', date)
-      .order('id', { ascending: false })
-      .limit(1)
-
-    if (hdrErr || !headers.length) {
+      .insert({ date, project_id: selectedProject })
+      .select()
+      .single()
+    console.log('💡 report insert:', { rpt, rptErr })
+    if (rptErr || !rpt) {
+      alert('Error creating report header.')
       setLoading(false)
-      alert('No work report found.')
-      return
-    }
-    const reportId = headers[0].id
-
-    // b) all work allotments for that report
-    const { data: workEntries = [], error: weErr } = await supabase
-      .from('work_allotments')
-      .select('id, work_description, quantity, uom')
-      .eq('report_id', reportId)
-
-    if (weErr) {
-      console.error(weErr)
-      setLoading(false)
-      alert('Error loading works.')
       return
     }
 
-    // c) all labours for those work IDs
-    const workIds = workEntries.map((w) => w.id)
-    const { data: labourRows = [], error: lbErr } = await supabase
-      .from('work_report_labours')
-      .select('work_allotment_id, team_id, labour_type_id, count')
-      .in('work_allotment_id', workIds)
+    // 2️⃣ For each work: insert allotment row, then labours
+    for (const w of works) {
+      const { data: wa, error: waErr } = await supabase
+        .from('work_allotments')
+        .insert({
+          report_id: rpt.id,
+          work_description: w.description,
+          quantity: w.quantity,
+          uom: w.uom,
+        })
+        .select()
+        .single()
+      console.log('💡 work_allotment insert:', { wa, waErr })
+      if (waErr || !wa) {
+        alert('Error inserting work description: ' + waErr?.message)
+        continue
+      }
 
-    if (lbErr) {
-      console.error(lbErr)
-      setLoading(false)
-      alert('Error loading labours.')
-      return
+      const rows = w.labourAllotments.map((a) => ({
+        report_id: rpt.id,
+        work_allotment_id: wa.id,
+        team_id: a.teamId,
+        labour_type_id: a.typeId,
+        count: parseInt(a.count),
+      }))
+      const { data: lr, error: lrErr } = await supabase
+        .from('work_report_labours')
+        .insert(rows)
+        .select()
+      console.log('💡 labour insert:', { lr, lrErr })
+      if (lrErr) {
+        alert('Error assigning labours: ' + lrErr.message)
+      }
     }
 
-    // d) group labours by work_allotment_id
-    const labourMap = {}
-    labourRows.forEach((l) => {
-      labourMap[l.work_allotment_id] = labourMap[l.work_allotment_id] || []
-      labourMap[l.work_allotment_id].push({
-        ...l,
-        teamName:
-          teams.find((t) => t.id === l.team_id)?.name || 'Unknown Team',
-        typeName:
-          typesMap[l.team_id]?.find((tt) => tt.id === l.labour_type_id)
-            ?.type_name || 'Unknown Type',
-      })
-    })
-
-    // e) attach labours to each work entry
-    const finalWorks = workEntries.map((w) => ({
-      ...w,
-      labours: labourMap[w.id] || [],
-    }))
-
-    setWorks(finalWorks)
+    alert('✅ Work report submitted!')
     setLoading(false)
+    onBack()
   }
 
   return (
     <div style={{ maxWidth: 460, margin: '0 auto', padding: 20 }}>
-      <h3>View Work Done Report</h3>
-      <select
-        style={input}
-        value={selectedProject}
-        onChange={(e) => setSelectedProject(e.target.value)}
-      >
-        <option value="">— Select Project —</option>
+      <h3>Work Done Report</h3>
+      <select style={input} value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
+        <option value="">-- Select Project --</option>
         {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
+          <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
+      <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
 
-      <input
-        type="date"
-        style={input}
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-      />
-
-      <button
-        style={primaryBtn}
-        onClick={fetchReports}
-        disabled={loading}
-      >
-        {loading ? 'Loading…' : '🔍 View Report'}
-      </button>
-
-      {works.map((w, i) => (
-        <div key={i} style={card}>
-          <p>
-            <strong>Work:</strong> {w.work_description}
-          </p>
-          <p>
-            <strong>Qty:</strong> {w.quantity} {w.uom}
-          </p>
-          <p>
-            <strong>Labours:</strong>
-          </p>
-          {w.labours.length > 0 ? (
-            <ul>
-              {w.labours.map((l, idx) => (
-                <li key={idx}>
-                  {l.teamName} – {l.typeName} – {l.count} nos
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p style={{ color: '#666' }}>No labours assigned</p>
-          )}
+      {works.map((w, wi) => (
+        <div key={wi} style={{ border: '1px solid #ccc', padding: 12, borderRadius: 10, marginBottom: 12 }}>
+          <input
+            placeholder="Work Description"
+            style={input}
+            value={w.description}
+            onChange={(e) => handleWorkChange(wi, 'description', e.target.value)}
+          />
+          <input
+            placeholder="Quantity"
+            style={input}
+            value={w.quantity}
+            onChange={(e) => handleWorkChange(wi, 'quantity', e.target.value)}
+          />
+          <input
+            placeholder="UOM"
+            style={input}
+            value={w.uom}
+            onChange={(e) => handleWorkChange(wi, 'uom', e.target.value)}
+          />
+          <p><strong>Allotted Labours</strong></p>
+          {w.labourAllotments.map((a, ai) => (
+            <div key={ai} style={{ marginBottom: 8 }}>
+              <select
+                style={input}
+                value={a.teamId}
+                onChange={(e) => handleAllotmentChange(wi, ai, 'teamId', e.target.value)}
+              >
+                <option value="">Select Team</option>
+                {teams.filter((t) =>
+                  Object.keys(attendanceMap).some((k) => k.startsWith(`${t.id}-`))
+                ).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <select
+                style={input}
+                value={a.typeId}
+                onChange={(e) => handleAllotmentChange(wi, ai, 'typeId', e.target.value)}
+              >
+                <option value="">Select Type</option>
+                {(types[a.teamId] || []).filter((tt) =>
+                  attendanceMap[`${a.teamId}-${tt.id}`] > 0
+                ).map((tt) => (
+                  <option key={tt.id} value={tt.id}>{tt.type_name}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="Count"
+                style={input}
+                value={a.count}
+                onChange={(e) => handleAllotmentChange(wi, ai, 'count', e.target.value)}
+              />
+              {a.teamId && a.typeId && (
+                <p style={{ color: 'red' }}>
+                  Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos
+                </p>
+              )}
+            </div>
+          ))}
+          <button style={secondaryBtn} onClick={() => addAllotment(wi)}>+ Add Labour</button>
         </div>
       ))}
 
-      <button style={secondaryBtn} onClick={onBack}>
-        ← Back
+      <button style={secondaryBtn} onClick={addWork}>+ Add Work</button>
+      <button style={primaryBtn} onClick={handleSubmit} disabled={loading || !canSubmit()}>
+        {loading ? 'Submitting…' : '✅ Submit Work Report'}
       </button>
+      <button style={secondaryBtn} onClick={onBack}>← Back</button>
     </div>
   )
 }
@@ -186,7 +276,7 @@ const input = {
   padding: 12,
   marginBottom: 12,
   fontSize: 16,
-  borderRadius: 8,
+  borderRadius: 10,
   border: '1px solid #ccc',
   boxSizing: 'border-box',
 }
@@ -194,27 +284,21 @@ const primaryBtn = {
   background: '#3b6ef6',
   color: '#fff',
   padding: 14,
+  borderRadius: 10,
   border: 'none',
-  borderRadius: 8,
   width: '100%',
   fontSize: 16,
-  cursor: 'pointer',
   marginBottom: 12,
+  cursor: 'pointer',
 }
 const secondaryBtn = {
   background: '#eee',
   color: '#333',
   padding: 12,
+  borderRadius: 10,
   border: 'none',
-  borderRadius: 8,
   width: '100%',
   fontSize: 16,
+  marginBottom: 12,
   cursor: 'pointer',
-  marginTop: 12,
-}
-const card = {
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  padding: 12,
-  marginTop: 12,
 }

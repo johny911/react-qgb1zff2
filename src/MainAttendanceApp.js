@@ -42,13 +42,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   async function checkAttendanceMarked() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('attendance')
       .select('*')
       .eq('project_id', projectId)
       .eq('date', date);
-    if (error) return;
-    if (data.length > 0) {
+
+    if (data?.length > 0) {
       setAttendanceMarked(true);
       setRows(
         data.map((r) => ({
@@ -134,7 +134,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
             <button style={primaryBtn} onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
             <button style={secondaryBtn} onClick={() => setScreen('view')}>👁️ View Attendance</button>
             <button style={secondaryBtn} onClick={() => setScreen('work')}>📝 Work Done Report</button>
-            <button style={secondaryBtn} onClick={() => setScreen('viewWork')}>📄 View Work Done Report</button>
+            <button style={secondaryBtn} onClick={() => setScreen('view-work')}>👁️ View Work Done Report</button>
           </>
         )}
 
@@ -218,7 +218,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         )}
 
         {screen === 'work' && <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />}
-        {screen === 'viewWork' && <ViewWorkReports goHome={() => setScreen('home')} />}
+        {screen === 'view-work' && <ViewWorkReports onBack={() => setScreen('home')} />}
       </div>
     </div>
   );

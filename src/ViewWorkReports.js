@@ -1,18 +1,36 @@
 import React, { useEffect, useState } from 'react'
+import {
+  Box,
+  Button,
+  Select,
+  Input,
+  Heading,
+  Text,
+  Stack,
+  Flex
+} from '@chakra-ui/react'
 import { supabase } from './supabaseClient'
 
 export default function ViewWorkReports({ onBack }) {
   const [projectId, setProjectId] = useState('')
-  const [date, setDate]           = useState(new Date().toISOString().split('T')[0])
-  const [projects, setProjects]   = useState([])
-  const [rows, setRows]           = useState([])
+  const [date, setDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [projects, setProjects] = useState([])
+  const [rows, setRows] = useState([])
 
+  // load projects
   useEffect(() => {
-    supabase.from('projects').select('id,name').then(({ data }) => setProjects(data||[]))
+    supabase
+      .from('projects')
+      .select('id,name')
+      .then(({ data }) => setProjects(data || []))
   }, [])
 
   const fetchReports = async () => {
-    if (!projectId||!date) return alert('Select project & date')
+    if (!projectId || !date) {
+      return alert('Select project & date')
+    }
     const { data, error } = await supabase
       .from('view_work_reports')
       .select('*')
@@ -20,36 +38,67 @@ export default function ViewWorkReports({ onBack }) {
       .eq('date', date)
       .order('allotment_id', { ascending: true })
     if (error) return alert(error.message)
-    setRows(data||[])
+    setRows(data || [])
   }
 
   return (
-    <div style={{padding:20}}>
-      <h3>View Work Done Report</h3>
-      <button onClick={onBack} style={{marginBottom:12}}>← Back</button>
+    <Box p={6} mx="auto" maxW="600px">
+      <Flex mb={4} align="center" justify="space-between">
+        <Heading size="md">👁️ View Work Done Report</Heading>
+        <Button size="sm" variant="outline" onClick={onBack}>
+          ← Back
+        </Button>
+      </Flex>
 
-      <select value={projectId} onChange={e=>setProjectId(e.target.value)} style={input}>
-        <option value=''>-- Project --</option>
-        {projects.map(p=> <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-      <input type='date' value={date} onChange={e=>setDate(e.target.value)} style={input}/>
-      <button onClick={fetchReports} style={btnPrimary}>Load</button>
+      <Stack spacing={3} mb={4}>
+        <Select
+          placeholder="Select Project"
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+        >
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
 
-      {rows.length===0
-        ? <p>No allocations found.</p>
-        : rows.map(r=>(
-            <div key={`${r.allotment_id}-${r.labour_id}`} style={card}>
-              <strong>{r.work_description}</strong> — {r.quantity} {r.uom}
-              <div style={{paddingLeft:12,marginTop:8}}>
+        <Input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
+
+        <Button colorScheme="blue" onClick={fetchReports}>
+          Load
+        </Button>
+      </Stack>
+
+      {rows.length === 0 ? (
+        <Text>No allocations found.</Text>
+      ) : (
+        <Stack spacing={4}>
+          {rows.map((r) => (
+            <Box
+              key={`${r.allotment_id}-${r.labour_id}`}
+              p={4}
+              borderWidth={1}
+              borderRadius="md"
+              bg="gray.50"
+            >
+              <Text fontWeight="bold">
+                {r.work_description}
+              </Text>
+              <Text>
+                — {r.quantity} {r.uom}
+              </Text>
+              <Text mt={2} pl={4}>
                 {r.team_name} / {r.labour_type_name}: {r.count} nos
-              </div>
-            </div>
-          ))
-      }
-    </div>
+              </Text>
+            </Box>
+          ))}
+        </Stack>
+      )}
+    </Box>
   )
 }
-
-const input = {width:'100%',padding:8,marginBottom:12,border:'1px solid #ccc',borderRadius:6,boxSizing:'border-box'}
-const btnPrimary = {...input,background:'#3b6ef6',color:'#fff',cursor:'pointer'}
-const card = {border:'1px solid #ddd',borderRadius:8,padding:16,marginBottom:16,background:'#fafafa'}

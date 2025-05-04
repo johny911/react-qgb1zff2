@@ -119,99 +119,134 @@ export default function MainAttendanceApp({ user, onLogout }) {
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: 600, margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>👷 SiteTrack</h2>
-        <button onClick={onLogout}>Logout</button>
+    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 20, background: '#f4f6f8', minHeight: '100vh' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto', background: '#fff', padding: 24, borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2>🏗️ SiteTrack</h2>
+          <button onClick={onLogout} style={{ border: 'none', background: '#eee', padding: '6px 12px', borderRadius: 8, cursor: 'pointer' }}>Logout</button>
+        </div>
+
+        {screen === 'home' && (
+          <>
+            <h3 style={{ marginBottom: 24 }}>Welcome, {user.email.split('@')[0]}</h3>
+            <button style={primaryBtn} onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
+            <button style={secondaryBtn} onClick={() => setScreen('view')}>👁️ View Attendance</button>
+          </>
+        )}
+
+        {screen === 'view' && (
+          <div>
+            <h3>View Attendance</h3>
+            <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
+            <button style={primaryBtn} onClick={fetchAttendance}>View</button>
+            <ul>
+              {viewResults.map((r, i) => (
+                <li key={i}>{r.labour_teams.name} – {r.labour_types.type_name} – {r.count} nos</li>
+              ))}
+            </ul>
+            <button style={secondaryBtn} onClick={() => setScreen('home')}>← Back</button>
+          </div>
+        )}
+
+        {screen === 'enter' && (
+          <div>
+            <h3>Enter Attendance</h3>
+            <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
+            {attendanceMarked && <p style={{ color: 'green' }}>✅ Attendance already marked</p>}
+
+            {rows.map((row, i) => (
+              <div key={i} style={{ border: '1px solid #ddd', padding: 12, borderRadius: 10, marginBottom: 12 }}>
+                <select style={input} value={row.teamId} onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}>
+                  <option value="">Select Team</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <select style={input} value={row.typeId} onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}>
+                  <option value="">Select Labour Type</option>
+                  {(types[row.teamId] || []).map((t) => (
+                    <option key={t.id} value={t.id}>{t.type_name}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  placeholder="No. of Workers"
+                  style={input}
+                  value={row.count}
+                  onChange={(e) => handleRowChange(i, 'count', e.target.value)}
+                />
+                <button onClick={() => deleteRow(i)} style={{ background: 'transparent', color: 'red', border: 'none' }}>🗑️</button>
+              </div>
+            ))}
+
+            <button style={secondaryBtn} onClick={addRow}>+ Add Team</button>
+            <button style={secondaryBtn} onClick={() => setShowPreview(true)}>👁️ Preview Summary</button>
+
+            {showPreview && (
+              <div style={{ marginTop: 12 }}>
+                <h4>Summary</h4>
+                <ul>
+                  {rows.map((r, i) => (
+                    <li key={i}>
+                      {teams.find((t) => t.id === r.teamId)?.name} –
+                      {types[r.teamId]?.find((t) => t.id === r.typeId)?.type_name} –
+                      {r.count} nos
+                    </li>
+                  ))}
+                </ul>
+                <button style={primaryBtn} onClick={handleSubmit}>✅ Submit Attendance</button>
+              </div>
+            )}
+            <button style={secondaryBtn} onClick={() => setScreen('home')}>← Back</button>
+          </div>
+        )}
       </div>
-
-      {screen === 'home' && (
-        <>
-          <h3>Welcome, {user.email.split('@')[0]}</h3>
-          <button onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
-          <button onClick={() => setScreen('view')}>👁️ View Attendance</button>
-        </>
-      )}
-
-      {screen === 'view' && (
-        <div>
-          <h3>View Attendance</h3>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">-- Select Project --</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <button onClick={fetchAttendance}>View</button>
-          <ul>
-            {viewResults.map((r, i) => (
-              <li key={i}>{r.labour_teams.name} – {r.labour_types.type_name} – {r.count} nos</li>
-            ))}
-          </ul>
-          <button onClick={() => setScreen('home')}>Back</button>
-        </div>
-      )}
-
-      {screen === 'enter' && (
-        <div>
-          <h3>Enter Attendance</h3>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            <option value="">-- Select Project --</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-
-          {attendanceMarked && <p style={{ color: 'green' }}>✅ Attendance marked</p>}
-
-          {rows.map((row, i) => (
-            <div key={i} style={{ border: '1px solid #ccc', padding: 10, marginBottom: 10 }}>
-              <select value={row.teamId} onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}>
-                <option value="">Select Team</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-              <select value={row.typeId} onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}>
-                <option value="">Select Labour Type</option>
-                {(types[row.teamId] || []).map((t) => (
-                  <option key={t.id} value={t.id}>{t.type_name}</option>
-                ))}
-              </select>
-              <input
-                type="number"
-                placeholder="Number of Workers"
-                value={row.count}
-                onChange={(e) => handleRowChange(i, 'count', e.target.value)}
-              />
-              <button onClick={() => deleteRow(i)}>🗑️</button>
-            </div>
-          ))}
-
-          <button onClick={addRow}>+ Add Team</button>
-          <button onClick={() => setShowPreview(true)}>👁️ Preview Summary</button>
-
-          {showPreview && (
-            <div>
-              <h4>Summary</h4>
-              <ul>
-                {rows.map((r, i) => (
-                  <li key={i}>
-                    {teams.find((t) => t.id === r.teamId)?.name} –
-                    {types[r.teamId]?.find((t) => t.id === r.typeId)?.type_name} –
-                    {r.count} nos
-                  </li>
-                ))}
-              </ul>
-              <button onClick={handleSubmit}>✅ Submit Attendance</button>
-            </div>
-          )}
-
-          <button onClick={() => setScreen('home')}>Back</button>
-        </div>
-      )}
     </div>
   );
 }
+
+const input = {
+  width: '100%',
+  padding: 12,
+  marginBottom: 12,
+  fontSize: 16,
+  borderRadius: 10,
+  border: '1px solid #ccc',
+  boxSizing: 'border-box',
+};
+
+const primaryBtn = {
+  background: '#3b6ef6',
+  color: '#fff',
+  padding: 14,
+  borderRadius: 10,
+  border: 'none',
+  width: '100%',
+  fontSize: 16,
+  marginBottom: 12,
+  cursor: 'pointer',
+};
+
+const secondaryBtn = {
+  background: '#eee',
+  color: '#333',
+  padding: 12,
+  borderRadius: 10,
+  border: 'none',
+  width: '100%',
+  fontSize: 16,
+  marginBottom: 12,
+  cursor: 'pointer',
+};

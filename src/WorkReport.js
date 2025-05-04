@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 
-export default function WorkReport({ onBack }) {
+export default function WorkReport({ goHome }) {
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState({});
@@ -113,6 +113,7 @@ export default function WorkReport({ onBack }) {
   };
 
   const handleSubmit = async () => {
+    console.log('Submit clicked');
     if (!canSubmit()) return alert('Please allot all labours before submitting.');
 
     const { data: reportInsert, error: reportError } = await supabase
@@ -121,10 +122,13 @@ export default function WorkReport({ onBack }) {
       .select()
       .single();
 
-    if (reportError || !reportInsert) return alert('Error submitting report.');
+    if (reportError || !reportInsert) {
+      console.error('Report insert error:', reportError);
+      return alert('Error submitting report.');
+    }
 
     for (const work of works) {
-      const { data: workData } = await supabase
+      const { data: workData, error: workError } = await supabase
         .from('work_allotments')
         .insert({
           report_id: reportInsert.id,
@@ -135,6 +139,11 @@ export default function WorkReport({ onBack }) {
         .select()
         .single();
 
+      if (workError) {
+        console.error('Work insert error:', workError);
+        continue;
+      }
+
       const labourRows = work.labourAllotments.map((a) => ({
         report_id: reportInsert.id,
         work_allotment_id: workData.id,
@@ -143,11 +152,12 @@ export default function WorkReport({ onBack }) {
         count: parseInt(a.count),
       }));
 
-      await supabase.from('work_report_labours').insert(labourRows);
+      const { error: labErr } = await supabase.from('work_report_labours').insert(labourRows);
+      if (labErr) console.error('Labour insert error:', labErr);
     }
 
     alert('✅ Work report submitted!');
-    onBack();
+    goHome();
   };
 
   return (
@@ -197,7 +207,7 @@ export default function WorkReport({ onBack }) {
 
       <button style={secondaryBtn} onClick={addWork}>+ Add Work</button>
       <button style={primaryBtn} onClick={handleSubmit} disabled={!canSubmit()}>✅ Submit Work Report</button>
-      <button style={secondaryBtn} onClick={onBack}>← Back</button>
+      <button style={secondaryBtn} onClick={goHome}>← Back</button>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import WorkReport from './WorkReport';
-import ViewWorkReports from './ViewWorkReports';
+import ViewWorkReports from './ViewWorkReports'; // ✅ added
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const [screen, setScreen] = useState('home');

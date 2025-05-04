@@ -17,7 +17,7 @@ export default function App() {
       setUser(currentUser);
 
       if (currentUser) {
-        await fetchOrCreateUser(currentUser);
+        await fetchUserRole(currentUser.id);
       } else {
         setLoading(false);
       }
@@ -29,7 +29,7 @@ export default function App() {
       const currentUser = session?.user || null;
       setUser(currentUser);
       if (currentUser) {
-        fetchOrCreateUser(currentUser);
+        fetchUserRole(currentUser.id);
       } else {
         setRole(null);
         setLoading(false);
@@ -39,26 +39,19 @@ export default function App() {
     return () => listener?.subscription?.unsubscribe();
   }, []);
 
-  const fetchOrCreateUser = async (currentUser) => {
+  const fetchUserRole = async (userId) => {
     const { data, error } = await supabase
       .from('users')
       .select('role')
-      .eq('id', currentUser.id)
+      .eq('id', userId)
       .single();
 
-    if (error && error.code === 'PGRST116') {
-      // Not found — insert with default role
-      await supabase.from('users').insert({
-        id: currentUser.id,
-        email: currentUser.email,
-        name: currentUser.email.split('@')[0],
-        role: 'engineer'
-      });
-      setRole('engineer');
-    } else if (data) {
-      setRole(data.role);
+    if (error) {
+      console.error('Error fetching role:', error.message);
+      setRole(null);
+    } else {
+      setRole(data?.role);
     }
-
     setLoading(false);
   };
 

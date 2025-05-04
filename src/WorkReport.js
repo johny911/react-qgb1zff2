@@ -24,9 +24,7 @@ export default function WorkReport({ onBack }) {
   }, []);
 
   useEffect(() => {
-    if (selectedProject && date) {
-      fetchAttendance();
-    }
+    if (selectedProject && date) fetchAttendance();
   }, [selectedProject, date]);
 
   const fetchBaseData = async () => {
@@ -46,19 +44,18 @@ export default function WorkReport({ onBack }) {
   };
 
   const fetchAttendance = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('attendance')
       .select('*')
       .eq('project_id', selectedProject)
       .eq('date', date);
 
-    if (error || !data) return;
-
     const attendance = {};
-    data.forEach((row) => {
+    data?.forEach((row) => {
       const key = `${row.team_id}-${row.labour_type_id}`;
       attendance[key] = (attendance[key] || 0) + row.count;
     });
+
     setAttendanceMap(attendance);
     setRemainingMap({ ...attendance });
   };
@@ -112,32 +109,22 @@ export default function WorkReport({ onBack }) {
   };
 
   const canSubmit = () => {
-    for (let key in remainingMap) {
-      if (remainingMap[key] !== 0) return false;
-    }
-    return true;
+    return Object.values(remainingMap).every((v) => v === 0);
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit()) {
-      alert('Please allot all labours before submitting');
-      return;
-    }
+    if (!canSubmit()) return alert('Please allot all labours before submitting.');
 
     const { data: reportInsert, error: reportError } = await supabase
       .from('work_reports')
-      .insert({
-        date,
-        project_id: selectedProject,
-        description: `Work Report for ${date}`,
-      })
+      .insert({ date, project_id: selectedProject, description: `Work Report for ${date}` })
       .select()
       .single();
 
-    if (reportError || !reportInsert) return alert('Error submitting report');
+    if (reportError || !reportInsert) return alert('Error submitting report.');
 
     for (const work of works) {
-      const { data: workData, error: workError } = await supabase
+      const { data: workData } = await supabase
         .from('work_allotments')
         .insert({
           report_id: reportInsert.id,
@@ -148,9 +135,7 @@ export default function WorkReport({ onBack }) {
         .select()
         .single();
 
-      if (workError) continue;
-
-      const laboursPayload = work.labourAllotments.map((a) => ({
+      const labourRows = work.labourAllotments.map((a) => ({
         report_id: reportInsert.id,
         work_allotment_id: workData.id,
         team_id: a.teamId,
@@ -158,7 +143,7 @@ export default function WorkReport({ onBack }) {
         count: parseInt(a.count),
       }));
 
-      await supabase.from('work_report_labours').insert(laboursPayload);
+      await supabase.from('work_report_labours').insert(labourRows);
     }
 
     alert('✅ Work report submitted!');
@@ -183,9 +168,7 @@ export default function WorkReport({ onBack }) {
           <input placeholder='UOM' style={input} value={work.uom} onChange={(e) => handleWorkChange(wIdx, 'uom', e.target.value)} />
           <p><strong>Allotted Labours</strong></p>
           {work.labourAllotments.map((a, aIdx) => {
-            const filteredTeams = teams.filter((t) =>
-              Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`))
-            );
+            const filteredTeams = teams.filter((t) => Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`)));
             const filteredTypes = types[a.teamId]?.filter((t) => attendanceMap[`${a.teamId}-${t.id}`]) || [];
             return (
               <div key={aIdx}>
@@ -203,9 +186,7 @@ export default function WorkReport({ onBack }) {
                 </select>
                 <input type='number' placeholder='Count' style={input} value={a.count} onChange={(e) => handleAllotmentChange(wIdx, aIdx, 'count', e.target.value)} />
                 {a.teamId && a.typeId && (
-                  <p style={{ color: 'red' }}>
-                    Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos
-                  </p>
+                  <p style={{ color: 'red' }}>Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos</p>
                 )}
               </div>
             );
@@ -213,8 +194,9 @@ export default function WorkReport({ onBack }) {
           <button style={secondaryBtn} onClick={() => addAllotment(wIdx)}>+ Add Labour</button>
         </div>
       ))}
+
       <button style={secondaryBtn} onClick={addWork}>+ Add Work</button>
-      <button style={primaryBtn} disabled={!canSubmit()} onClick={handleSubmit}>✅ Submit Work Report</button>
+      <button style={primaryBtn} onClick={handleSubmit} disabled={!canSubmit()}>✅ Submit Work Report</button>
       <button style={secondaryBtn} onClick={onBack}>← Back</button>
     </div>
   );

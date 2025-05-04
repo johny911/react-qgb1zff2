@@ -1,84 +1,67 @@
-// ✅ Attendance App with react-select Dropdowns
+// App.js
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import Select from "react-select";
+import { FaTrash } from "react-icons/fa";
 
 const supabase = createClient(
   "https://hftkpcltkuewskmtkmbq.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdGtwY2x0a3Vld3NrbXRrbWJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYxMTUxMjYsImV4cCI6MjA2MTY5MTEyNn0.sPBgUfablM1Nh1fX1wBeeYHTL-6rljiDUVqeh4c0t_0"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdGtwY2x0a3Vld3NrbXRrbWJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYxMTUxMjYsImV4cCI6MjA2MTY5MTEyNn0.sPBgUfablM1Nh1fX1wBeeYHTL-6rljiDUVqeh4c0t_0" // Replace with your actual anon key
 );
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState("home");
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState({});
   const [rows, setRows] = useState([{ teamId: "", typeId: "", count: "" }]);
-  const [projectId, setProjectId] = useState(null);
+  const [projectId, setProjectId] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [viewResults, setViewResults] = useState([]);
   const [marked, setMarked] = useState(false);
-  const [existingAttendance, setExistingAttendance] = useState([]);
-  const [showPreview, setShowPreview] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchUser();
     fetchBaseData();
   }, []);
 
-  const fetchUser = async () => {
-    const { data } = await supabase.auth.getUser();
-    setUser(data.user);
-  };
+  useEffect(() => {
+    checkAttendanceStatus();
+  }, [projectId, date]);
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    window.location.reload();
-  };
-
-  const fetchBaseData = async () => {
+  async function fetchBaseData() {
     const { data: projectsData } = await supabase.from("projects").select("*");
     const { data: teamsData } = await supabase.from("labour_teams").select("*");
     const { data: typesData } = await supabase.from("labour_types").select("*");
+
     const typeMap = {};
     typesData.forEach((type) => {
       if (!typeMap[type.team_id]) typeMap[type.team_id] = [];
       typeMap[type.team_id].push(type);
     });
+
     setProjects(projectsData || []);
     setTeams(teamsData || []);
     setTypes(typeMap);
-  };
+  }
 
-  useEffect(() => {
-    if (projectId && date) {
-      checkMarked();
-    }
-  }, [projectId, date]);
-
-  const checkMarked = async () => {
+  async function checkAttendanceStatus() {
+    if (!projectId || !date) return;
     const { data } = await supabase
       .from("attendance")
       .select("*")
-      .eq("project_id", projectId.value)
+      .eq("project_id", projectId)
       .eq("date", date);
-
-    if (data && data.length > 0) {
+    if (data?.length) {
       setMarked(true);
-      setExistingAttendance(data);
-      const mapped = data.map((item) => ({
+      const filled = data.map((item) => ({
         teamId: item.team_id,
         typeId: item.labour_type_id,
-        count: item.count.toString(),
+        count: item.count,
       }));
-      setRows(mapped);
+      setRows(filled);
     } else {
       setMarked(false);
       setRows([{ teamId: "", typeId: "", count: "" }]);
     }
-  };
+  }
 
   const handleRowChange = (index, field, value) => {
     const updated = [...rows];
@@ -96,180 +79,152 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    await supabase
-      .from("attendance")
-      .delete()
-      .eq("project_id", projectId.value)
-      .eq("date", date);
-
+    if (!projectId || !date || rows.some((r) => !r.teamId || !r.typeId || !r.count)) {
+      alert("Please fill all fields");
+      return;
+    }
+    setLoading(true);
     const payload = rows.map((row) => ({
-      project_id: projectId.value,
+      project_id: projectId,
       date,
       team_id: row.teamId,
       labour_type_id: row.typeId,
       count: parseInt(row.count),
     }));
-
+    if (marked) await supabase.from("attendance").delete().eq("project_id", projectId).eq("date", date);
     const { error } = await supabase.from("attendance").insert(payload);
+    setLoading(false);
     if (error) alert("Error: " + error.message);
-    else {
-      alert("Attendance saved!");
-      setMarked(true);
-      setShowPreview(false);
-      setScreen("home");
-    }
+    else alert("Attendance submitted!");
   };
-
-  const fetchAttendance = async () => {
-    const { data } = await supabase
-      .from("attendance")
-      .select("count, labour_types(type_name), labour_teams(name)")
-      .eq("project_id", projectId.value)
-      .eq("date", date);
-    setViewResults(data || []);
-  };
-
-  const projectOptions = projects.map(p => ({ label: p.name, value: p.id }));
-  const teamOptions = teams.map(t => ({ label: t.name, value: t.id }));
 
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui, sans-serif', background: '#f5f6fa', minHeight: '100vh' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h2 style={{ fontWeight: 'bold', fontSize: 18 }}>👷 SiteTrack</h2>
-        {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>{user.email?.split('@')[0]}</span>
-            <button onClick={logout} style={{ background: '#eee', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 16, cursor: 'pointer' }}>🚪</button>
+    <div style={styles.wrapper}>
+      <div style={styles.container}>
+        <h2 style={styles.heading}>👷 SiteTrack</h2>
+        <h3>Enter Attendance</h3>
+        <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <option value="">Select Project</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+        {marked && <div style={styles.marked}>✅ Attendance marked</div>}
+
+        {rows.map((row, index) => (
+          <div key={index} style={styles.rowCard}>
+            <select style={styles.input} value={row.teamId} onChange={(e) => handleRowChange(index, "teamId", e.target.value)}>
+              <option value="">Select Team</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <select
+              style={styles.input}
+              value={row.typeId}
+              onChange={(e) => handleRowChange(index, "typeId", e.target.value)}
+              disabled={!row.teamId}
+            >
+              <option value="">Select Labour Type</option>
+              {(types[row.teamId] || []).map((type) => (
+                <option key={type.id} value={type.id}>{type.type_name}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              style={styles.input}
+              placeholder="Number of Workers"
+              value={row.count}
+              onChange={(e) => handleRowChange(index, "count", e.target.value)}
+            />
+            <button style={styles.deleteBtn} onClick={() => deleteRow(index)}>
+              <FaTrash size={14} />
+            </button>
           </div>
-        )}
+        ))}
+
+        <button style={styles.outlineBtn} onClick={addRow}>+ Add Team</button>
+        <button style={styles.submitBtn} onClick={handleSubmit} disabled={loading}>
+          {loading ? "Saving..." : "Submit Attendance"}
+        </button>
       </div>
-
-      {screen === "enter" && (
-        <>
-          <h3>Enter Attendance</h3>
-          <Select
-            options={projectOptions}
-            value={projectId}
-            onChange={(selected) => setProjectId(selected)}
-            placeholder="Select Project"
-          />
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={{ ...inputStyle, marginTop: 10 }}
-          />
-
-          {rows.map((row, index) => {
-            const teamSelectOptions = teams.map(t => ({ label: t.name, value: t.id }));
-            const typeOptions = types[row.teamId] || [];
-            return (
-              <div key={index} style={cardStyle}>
-                <Select
-                  options={teamSelectOptions}
-                  value={teamSelectOptions.find(opt => opt.value === row.teamId)}
-                  onChange={(selected) => handleRowChange(index, "teamId", selected.value)}
-                  placeholder="Select Team"
-                />
-                <Select
-                  options={(typeOptions || []).map(t => ({ label: t.type_name, value: t.id }))}
-                  value={(typeOptions || []).map(t => ({ label: t.type_name, value: t.id })).find(opt => opt.value === row.typeId)}
-                  onChange={(selected) => handleRowChange(index, "typeId", selected.value)}
-                  placeholder="Select Labour Type"
-                  isDisabled={!row.teamId}
-                />
-                <input
-                  type="number"
-                  value={row.count}
-                  onChange={(e) => handleRowChange(index, "count", e.target.value)}
-                  placeholder="Number of Workers"
-                  style={inputStyle}
-                />
-                <button onClick={() => deleteRow(index)} style={deleteBtn}>🗑️</button>
-              </div>
-            );
-          })}
-
-          <button onClick={addRow} style={addBtn}>+ Add Team</button>
-          <button onClick={() => setShowPreview(true)} style={btnSecondary}>Preview Summary</button>
-          {showPreview && (
-            <>
-              <ul>
-                {rows.map((r, i) => {
-                  const team = teams.find(t => t.id == r.teamId)?.name || "Team";
-                  const type = types[r.teamId]?.find(t => t.id == r.typeId)?.type_name || "Type";
-                  return <li key={i}>{team} – {type} – {r.count} nos</li>;
-                })}
-              </ul>
-              <button onClick={handleSubmit} style={btnPrimary}>Submit Attendance</button>
-            </>
-          )}
-          <button onClick={() => setScreen("home")} style={btnSecondary}>Back</button>
-        </>
-      )}
-
-      {screen === "home" && (
-        <>
-          <h3>Welcome, {user?.email?.split("@")[0]}</h3>
-          <button onClick={() => setScreen("enter")} style={btnPrimary}>Enter Attendance</button>
-          <button onClick={() => setScreen("view")} style={btnSecondary}>View Attendance</button>
-        </>
-      )}
     </div>
   );
 }
 
-const inputStyle = {
-  width: "100%",
-  padding: 12,
-  marginBottom: 12,
-  borderRadius: 10,
-  border: "1px solid #ccc",
-};
-
-const cardStyle = {
-  background: "#fff",
-  padding: 16,
-  marginBottom: 16,
-  borderRadius: 12,
-  boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-};
-
-const btnPrimary = {
-  padding: 12,
-  background: "#1d4ed8",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  marginTop: 10,
-  width: "100%",
-};
-
-const btnSecondary = {
-  padding: 12,
-  background: "#e2e8f0",
-  color: "black",
-  border: "none",
-  borderRadius: 8,
-  marginTop: 10,
-  width: "100%",
-};
-
-const deleteBtn = {
-  background: "#e11d48",
-  color: "white",
-  padding: 6,
-  border: "none",
-  borderRadius: 6,
-  marginTop: 6,
-};
-
-const addBtn = {
-  border: "2px dashed #3b82f6",
-  color: "#3b82f6",
-  padding: 12,
-  marginBottom: 10,
-  borderRadius: 8,
-  width: "100%",
-  background: "#f0f9ff",
+const styles = {
+  wrapper: {
+    padding: '20px',
+    background: '#f1f4f9',
+    minHeight: '100vh',
+    fontFamily: 'sans-serif',
+  },
+  container: {
+    maxWidth: 480,
+    margin: 'auto',
+  },
+  heading: {
+    fontWeight: 600,
+    marginBottom: 20,
+  },
+  input: {
+    width: '100%',
+    padding: '12px 16px',
+    fontSize: 16,
+    borderRadius: 10,
+    border: '1px solid #ccc',
+    marginBottom: 12,
+    boxSizing: 'border-box',
+  },
+  marked: {
+    background: '#e6f4ea',
+    color: '#2e7d32',
+    padding: '10px 16px',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  rowCard: {
+    background: '#fff',
+    border: '1px solid #ddd',
+    borderRadius: 14,
+    padding: 20,
+    marginBottom: 20,
+    position: 'relative',
+    boxShadow: '0 1px 5px rgba(0,0,0,0.05)',
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    background: '#e53935',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 10,
+    width: 36,
+    height: 36,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  outlineBtn: {
+    width: '100%',
+    padding: 14,
+    fontSize: 16,
+    borderRadius: 10,
+    border: '2px dashed #2979ff',
+    background: '#e3f2fd',
+    color: '#1976d2',
+    marginBottom: 12,
+    cursor: 'pointer',
+  },
+  submitBtn: {
+    width: '100%',
+    padding: 14,
+    fontSize: 16,
+    borderRadius: 10,
+    border: 'none',
+    background: '#1976d2',
+    color: '#fff',
+    cursor: 'pointer',
+  },
 };

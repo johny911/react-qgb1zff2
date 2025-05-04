@@ -2,29 +2,32 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 
-export default function WorkReport({ user, onLogout, goHome }) {
+export default function WorkReport({ onBack }) {
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState({});
   const [projectId, setProjectId] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [description, setDescription] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [uom, setUom] = useState('');
-  const [attendance, setAttendance] = useState([]);
-  const [allotments, setAllotments] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [attendanceData, setAttendanceData] = useState([]);
+  const [works, setWorks] = useState([
+    {
+      description: '',
+      quantity: '',
+      uom: '',
+      labourAllotments: [],
+    },
+  ]);
 
   useEffect(() => {
     fetchBaseData();
   }, []);
 
   useEffect(() => {
-    if (projectId && date) fetchAttendance();
+    if (projectId && date) loadAttendance();
   }, [projectId, date]);
 
-  async function fetchBaseData() {
-    const { data: projectsData } = await supabase.from('projects').select('*');
+  const fetchBaseData = async () => {
+    const { data: projectData } = await supabase.from('projects').select('*');
     const { data: teamsData } = await supabase.from('labour_teams').select('*');
     const { data: typesData } = await supabase.from('labour_types').select('*');
 
@@ -34,153 +37,185 @@ export default function WorkReport({ user, onLogout, goHome }) {
       typeMap[type.team_id].push(type);
     });
 
-    setProjects(projectsData || []);
+    setProjects(projectData || []);
     setTeams(teamsData || []);
     setTypes(typeMap);
-  }
+  };
 
-  async function fetchAttendance() {
-    const { data, error } = await supabase
+  const loadAttendance = async () => {
+    const { data } = await supabase
       .from('attendance')
       .select('*')
       .eq('project_id', projectId)
       .eq('date', date);
 
-    if (!error && data) {
-      setAttendance(data);
-      const initialAllotments = data.map((entry) => ({
-        team_id: entry.team_id,
-        labour_type_id: entry.labour_type_id,
-        count: entry.count,
-        allotted: '',
-      }));
-      setAllotments(initialAllotments);
-    }
-  }
-
-  const updateAllotted = (index, value) => {
-    const updated = [...allotments];
-    updated[index].allotted = value;
-    setAllotments(updated);
+    setAttendanceData(data || []);
   };
 
-  const isReadyToSubmit = allotments.every((a) => a.allotted && parseInt(a.allotted) === a.count);
+  const handleWorkChange = (index, field, value) => {
+    const updated = [...works];
+    updated[index][field] = value;
+    setWorks(updated);
+  };
+
+  const handleAllotmentChange = (workIndex, allotIndex, field, value) => {
+    const updated = [...works];
+    const allotments = [...updated[workIndex].labourAllotments];
+    allotments[allotIndex][field] = value;
+    updated[workIndex].labourAllotments = allotments;
+    setWorks(updated);
+  };
+
+  const addWork = () => {
+    setWorks([...works, { description: '', quantity: '', uom: '', labourAllotments: [] }]);
+  };
+
+  const addAllotment = (workIndex) => {
+    const updated = [...works];
+    updated[workIndex].labourAllotments.push({ teamId: '', typeId: '', count: '' });
+    setWorks(updated);
+  };
 
   const handleSubmit = async () => {
-    if (!projectId || !date || !description || !quantity || !uom || !isReadyToSubmit) {
-      alert('Please fill all fields and fully allot labour.');
-      return;
+    for (const work of works) {
+      const totalAllotted = work.labourAllotments.reduce((sum, r) => sum + Number(r.count || 0), 0);
+      const totalAvailable = attendanceData.reduce((sum, r) => sum + r.count, 0);
+      if (totalAllotted > totalAvailable) {
+        alert('Over-allocation detected. Please fix.');
+        return;
+      }
     }
 
-    const { error } = await supabase.from('work_reports').insert({
-      project_id: projectId,
-      date,
-      description,
-      quantity,
-      uom,
-      labour_allotments: allotments,
+    const { data: insertedWorks, error } = await supabase
+      .from('work_reports')
+      .insert(
+        works.map((w) => ({
+          date,
+          project_id: projectId,
+          description: w.description,
+          quantity: w.quantity,
+          uom: w.uom,
+        }))
+      )
+      .select();
+
+    if (error || !insertedWorks) return alert('Error inserting work report');
+
+    const allAllotments = [];
+    insertedWorks.forEach((work, idx) => {
+      works[idx].labourAllotments.forEach((r) => {
+        allAllotments.push({
+          report_id: work.id,
+          team_id: r.teamId,
+          labour_type_id: r.typeId,
+          count: Number(r.count),
+        });
+      });
     });
 
-    if (error) {
-      alert('Error: ' + error.message);
-    } else {
-      alert('Work Report Submitted!');
-      setDescription('');
-      setQuantity('');
-      setUom('');
-      setAllotments([]);
-    }
+    const { error: allotError } = await supabase.from('work_allotments').insert(allAllotments);
+    if (allotError) return alert('Error saving allotments');
+
+    alert('Work Report Saved!');
+    onBack();
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h3>Enter Work Done Report</h3>
-        <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-          <option value="">-- Select Project --</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
-        <textarea placeholder="Work Description" style={styles.input} value={description} onChange={(e) => setDescription(e.target.value)} />
-        <input placeholder="Work Done Quantity" style={styles.input} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <input placeholder="Unit of Measurement (UOM)" style={styles.input} value={uom} onChange={(e) => setUom(e.target.value)} />
+    <div>
+      <h3>Work Done Report</h3>
+      <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+        <option value="">-- Select Project --</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+      <input type="date" style={input} value={date} onChange={(e) => setDate(e.target.value)} />
 
-        <h4 style={{ marginTop: 20 }}>Allot Labour (match attendance)</h4>
-        {allotments.map((a, i) => {
-          const team = teams.find((t) => t.id === a.team_id)?.name || 'Team';
-          const type = types[a.team_id]?.find((t) => t.id === a.labour_type_id)?.type_name || 'Type';
-          return (
-            <div key={i} style={styles.row}>
-              <span>{team} – {type} – {a.count} nos</span>
+      {works.map((work, wi) => (
+        <div key={wi} style={{ border: '1px solid #ccc', padding: 12, marginBottom: 16, borderRadius: 8 }}>
+          <input
+            style={input}
+            placeholder="Work Description"
+            value={work.description}
+            onChange={(e) => handleWorkChange(wi, 'description', e.target.value)}
+          />
+          <input
+            style={input}
+            placeholder="Quantity"
+            value={work.quantity}
+            onChange={(e) => handleWorkChange(wi, 'quantity', e.target.value)}
+          />
+          <input
+            style={input}
+            placeholder="UOM"
+            value={work.uom}
+            onChange={(e) => handleWorkChange(wi, 'uom', e.target.value)}
+          />
+
+          <h5>Allotted Labours</h5>
+          {work.labourAllotments.map((r, ri) => (
+            <div key={ri} style={{ marginBottom: 8 }}>
+              <select style={input} value={r.teamId} onChange={(e) => handleAllotmentChange(wi, ri, 'teamId', e.target.value)}>
+                <option value="">Select Team</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <select style={input} value={r.typeId} onChange={(e) => handleAllotmentChange(wi, ri, 'typeId', e.target.value)}>
+                <option value="">Select Type</option>
+                {(types[r.teamId] || []).map((t) => (
+                  <option key={t.id} value={t.id}>{t.type_name}</option>
+                ))}
+              </select>
               <input
-                type="number"
-                placeholder="Allotted"
-                style={{ ...styles.input, marginTop: 6 }}
-                value={a.allotted}
-                onChange={(e) => updateAllotted(i, e.target.value)}
+                style={input}
+                placeholder="Count"
+                value={r.count}
+                onChange={(e) => handleAllotmentChange(wi, ri, 'count', e.target.value)}
               />
             </div>
-          );
-        })}
+          ))}
 
-        <button style={styles.primaryBtn} onClick={handleSubmit} disabled={!isReadyToSubmit}>
-          ✅ Submit Work Report
-        </button>
-        <button style={styles.secondaryBtn} onClick={goHome}>← Back</button>
-      </div>
+          <button onClick={() => addAllotment(wi)} style={secondaryBtn}>+ Add Labour</button>
+        </div>
+      ))}
+
+      <button onClick={addWork} style={secondaryBtn}>➕ Add Work</button>
+      <button onClick={handleSubmit} style={primaryBtn}>✅ Submit Work Report</button>
+      <button onClick={onBack} style={secondaryBtn}>← Back</button>
     </div>
   );
 }
 
-const styles = {
-  page: {
-    fontFamily: 'system-ui, sans-serif',
-    background: '#f4f6f8',
-    padding: 20,
-    minHeight: '100vh',
-  },
-  card: {
-    background: '#fff',
-    maxWidth: 480,
-    margin: '0 auto',
-    padding: 24,
-    borderRadius: 16,
-    boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
-  },
-  input: {
-    width: '100%',
-    padding: 10,
-    marginBottom: 12,
-    borderRadius: 10,
-    border: '1px solid #ccc',
-    fontSize: 16,
-    boxSizing: 'border-box',
-  },
-  row: {
-    marginBottom: 12,
-  },
-  primaryBtn: {
-    background: '#1976d2',
-    color: '#fff',
-    border: 'none',
-    padding: 12,
-    width: '100%',
-    borderRadius: 10,
-    fontSize: 16,
-    cursor: 'pointer',
-    marginTop: 12,
-  },
-  secondaryBtn: {
-    background: '#ccc',
-    color: '#000',
-    border: 'none',
-    padding: 12,
-    width: '100%',
-    borderRadius: 10,
-    fontSize: 16,
-    cursor: 'pointer',
-    marginTop: 8,
-  },
+const input = {
+  width: '100%',
+  padding: 12,
+  marginBottom: 12,
+  fontSize: 16,
+  borderRadius: 10,
+  border: '1px solid #ccc',
+};
+
+const primaryBtn = {
+  background: '#3b6ef6',
+  color: '#fff',
+  padding: 12,
+  borderRadius: 10,
+  border: 'none',
+  width: '100%',
+  fontSize: 16,
+  marginBottom: 12,
+  cursor: 'pointer',
+};
+
+const secondaryBtn = {
+  background: '#eee',
+  color: '#333',
+  padding: 10,
+  borderRadius: 10,
+  border: 'none',
+  width: '100%',
+  fontSize: 16,
+  marginBottom: 12,
+  cursor: 'pointer',
 };

@@ -215,7 +215,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </div>
         )}
 
-        {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
+        {screen === 'work' && <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />}
       </div>
     </div>
   );

@@ -2,150 +2,185 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 
-export default function WorkReport({ projectId, date }) {
+export default function WorkReport({ user, onLogout, goHome }) {
   const [projects, setProjects] = useState([]);
-  const [attendance, setAttendance] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [types, setTypes] = useState({});
+  const [projectId, setProjectId] = useState('');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [uom, setUom] = useState('');
-  const [labourAllotments, setLabourAllotments] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [allotments, setAllotments] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    fetchProjects();
-    fetchAttendanceData();
+    fetchBaseData();
+  }, []);
+
+  useEffect(() => {
+    if (projectId && date) fetchAttendance();
   }, [projectId, date]);
 
-  const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('*');
-    setProjects(data || []);
-  };
+  async function fetchBaseData() {
+    const { data: projectsData } = await supabase.from('projects').select('*');
+    const { data: teamsData } = await supabase.from('labour_teams').select('*');
+    const { data: typesData } = await supabase.from('labour_types').select('*');
 
-  const fetchAttendanceData = async () => {
-    if (!projectId || !date) return;
+    const typeMap = {};
+    typesData.forEach((type) => {
+      if (!typeMap[type.team_id]) typeMap[type.team_id] = [];
+      typeMap[type.team_id].push(type);
+    });
 
-    const { data } = await supabase
+    setProjects(projectsData || []);
+    setTeams(teamsData || []);
+    setTypes(typeMap);
+  }
+
+  async function fetchAttendance() {
+    const { data, error } = await supabase
       .from('attendance')
-      .select('id, team_id, labour_type_id, count')
+      .select('*')
       .eq('project_id', projectId)
       .eq('date', date);
 
-    setAttendance(data || []);
-    const mapped = (data || []).map((entry) => ({
-      team_id: entry.team_id,
-      labour_type_id: entry.labour_type_id,
-      total: entry.count,
-      allotted: '',
-    }));
-    setLabourAllotments(mapped);
-  };
+    if (!error && data) {
+      setAttendance(data);
+      const initialAllotments = data.map((entry) => ({
+        team_id: entry.team_id,
+        labour_type_id: entry.labour_type_id,
+        count: entry.count,
+        allotted: '',
+      }));
+      setAllotments(initialAllotments);
+    }
+  }
 
-  const handleAllotmentChange = (index, value) => {
-    const updated = [...labourAllotments];
+  const updateAllotted = (index, value) => {
+    const updated = [...allotments];
     updated[index].allotted = value;
-    setLabourAllotments(updated);
+    setAllotments(updated);
   };
 
-  const allLaboursAllotted = () => {
-    return labourAllotments.every((entry) => parseInt(entry.allotted || 0) === entry.total);
-  };
+  const isReadyToSubmit = allotments.every((a) => a.allotted && parseInt(a.allotted) === a.count);
 
   const handleSubmit = async () => {
-    if (!description || !quantity || !uom || !allLaboursAllotted()) {
-      alert('Please fill all fields and fully allot labours');
+    if (!projectId || !date || !description || !quantity || !uom || !isReadyToSubmit) {
+      alert('Please fill all fields and fully allot labour.');
       return;
     }
 
-    setLoading(true);
     const { error } = await supabase.from('work_reports').insert({
       project_id: projectId,
       date,
       description,
       quantity,
       uom,
-      labour_allotments: labourAllotments,
+      labour_allotments: allotments,
     });
 
     if (error) {
-      alert('Submission failed');
+      alert('Error: ' + error.message);
     } else {
-      alert('Report submitted successfully');
-      setSubmitted(true);
+      alert('Work Report Submitted!');
+      setDescription('');
+      setQuantity('');
+      setUom('');
+      setAllotments([]);
     }
-    setLoading(false);
   };
 
-  if (submitted) {
-    return <p>✅ Work report submitted!</p>;
-  }
-
   return (
-    <div>
-      <h3>📋 Work Done Report</h3>
-      <p><strong>Project:</strong> {projects.find(p => p.id === projectId)?.name || 'N/A'}</p>
-      <p><strong>Date:</strong> {date}</p>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <h3>Enter Work Done Report</h3>
+        <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <option value="">-- Select Project --</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+        <textarea placeholder="Work Description" style={styles.input} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <input placeholder="Work Done Quantity" style={styles.input} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <input placeholder="Unit of Measurement (UOM)" style={styles.input} value={uom} onChange={(e) => setUom(e.target.value)} />
 
-      <textarea
-        placeholder="Work Description"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        rows={3}
-        style={input}
-      />
-      <input
-        type="text"
-        placeholder="Quantity"
-        value={quantity}
-        onChange={(e) => setQuantity(e.target.value)}
-        style={input}
-      />
-      <input
-        type="text"
-        placeholder="Unit of Measurement (UOM)"
-        value={uom}
-        onChange={(e) => setUom(e.target.value)}
-        style={input}
-      />
+        <h4 style={{ marginTop: 20 }}>Allot Labour (match attendance)</h4>
+        {allotments.map((a, i) => {
+          const team = teams.find((t) => t.id === a.team_id)?.name || 'Team';
+          const type = types[a.team_id]?.find((t) => t.id === a.labour_type_id)?.type_name || 'Type';
+          return (
+            <div key={i} style={styles.row}>
+              <span>{team} – {type} – {a.count} nos</span>
+              <input
+                type="number"
+                placeholder="Allotted"
+                style={{ ...styles.input, marginTop: 6 }}
+                value={a.allotted}
+                onChange={(e) => updateAllotted(i, e.target.value)}
+              />
+            </div>
+          );
+        })}
 
-      <h4>Allot Labour</h4>
-      {labourAllotments.map((entry, index) => (
-        <div key={index} style={{ ...input, padding: 10 }}>
-          Team ID: {entry.team_id}, Type ID: {entry.labour_type_id}, Total: {entry.total}
-          <input
-            type="number"
-            placeholder="Allotted"
-            value={entry.allotted}
-            onChange={(e) => handleAllotmentChange(index, e.target.value)}
-            style={{ marginTop: 8, width: '100%', padding: 8 }}
-          />
-        </div>
-      ))}
-
-      <button onClick={handleSubmit} disabled={loading} style={primaryBtn}>
-        ✅ Submit Report
-      </button>
+        <button style={styles.primaryBtn} onClick={handleSubmit} disabled={!isReadyToSubmit}>
+          ✅ Submit Work Report
+        </button>
+        <button style={styles.secondaryBtn} onClick={goHome}>← Back</button>
+      </div>
     </div>
   );
 }
 
-const input = {
-  width: '100%',
-  marginBottom: 12,
-  padding: 10,
-  borderRadius: 8,
-  border: '1px solid #ccc',
-  fontSize: 16,
-};
-
-const primaryBtn = {
-  background: '#1976d2',
-  color: '#fff',
-  padding: 14,
-  borderRadius: 10,
-  border: 'none',
-  width: '100%',
-  fontSize: 16,
-  marginBottom: 12,
-  cursor: 'pointer',
+const styles = {
+  page: {
+    fontFamily: 'system-ui, sans-serif',
+    background: '#f4f6f8',
+    padding: 20,
+    minHeight: '100vh',
+  },
+  card: {
+    background: '#fff',
+    maxWidth: 480,
+    margin: '0 auto',
+    padding: 24,
+    borderRadius: 16,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+  },
+  input: {
+    width: '100%',
+    padding: 10,
+    marginBottom: 12,
+    borderRadius: 10,
+    border: '1px solid #ccc',
+    fontSize: 16,
+    boxSizing: 'border-box',
+  },
+  row: {
+    marginBottom: 12,
+  },
+  primaryBtn: {
+    background: '#1976d2',
+    color: '#fff',
+    border: 'none',
+    padding: 12,
+    width: '100%',
+    borderRadius: 10,
+    fontSize: 16,
+    cursor: 'pointer',
+    marginTop: 12,
+  },
+  secondaryBtn: {
+    background: '#ccc',
+    color: '#000',
+    border: 'none',
+    padding: 12,
+    width: '100%',
+    borderRadius: 10,
+    fontSize: 16,
+    cursor: 'pointer',
+    marginTop: 8,
+  },
 };

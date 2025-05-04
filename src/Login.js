@@ -1,47 +1,77 @@
-import React, { useState } from 'react';
-import { supabase } from './supabaseClient';
+import React, { useState } from 'react'
+import { supabase } from './supabaseClient'
 
 export default function Login({ setUser }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [mode, setMode] = useState('login'); // or 'register'
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+    e.preventDefault()
+    setError('')
+    setMessage('')
 
-    if (!email || !password) return setError('Please enter email and password.');
-
-    let res;
-    if (mode === 'login') {
-      res = await supabase.auth.signInWithPassword({ email, password });
-    } else {
-      res = await supabase.auth.signUp({ email, password });
+    if (!email || (mode !== 'forgot' && !password)) {
+      return setError('Please fill in all required fields.')
     }
 
-    if (res.error) return setError(res.error.message);
-    const sessionUser = res.data?.user;
-    if (sessionUser) setUser(sessionUser);
-  };
+    if (mode === 'login') {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) setError(error.message)
+      else setUser(data.user)
+    } else if (mode === 'register') {
+      const { data, error } = await supabase.auth.signUp({ email, password })
+      if (error) setError(error.message)
+      else setMessage('Registration email sent! Check your inbox.')
+    } else if (mode === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (error) setError(error.message)
+      else setMessage('✅ Check your email for the reset link.')
+    }
+  }
 
   return (
     <div style={styles.container}>
       <h1 style={styles.logo}>🏗️ SiteTrack</h1>
-      <div style={styles.tab}>
-        <button
-          style={{ ...styles.tabBtn, ...(mode === 'login' ? styles.active : {}) }}
-          onClick={() => setMode('login')}
-        >
-          Login
-        </button>
-        <button
-          style={{ ...styles.tabBtn, ...(mode === 'register' ? styles.active : {}) }}
-          onClick={() => setMode('register')}
-        >
-          Register
-        </button>
-      </div>
+
+      {/* only show tabs when not in “forgot” mode */}
+      {mode !== 'forgot' && (
+        <div style={styles.tab}>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(mode === 'login' ? styles.active : {}),
+            }}
+            onClick={() => {
+              setMode('login')
+              setError('')
+              setMessage('')
+            }}
+          >
+            Login
+          </button>
+          <button
+            style={{
+              ...styles.tabBtn,
+              ...(mode === 'register' ? styles.active : {}),
+            }}
+            onClick={() => {
+              setMode('register')
+              setError('')
+              setMessage('')
+            }}
+          >
+            Register
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} style={styles.form}>
         <input
@@ -51,22 +81,57 @@ export default function Login({ setUser }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <input
-          type="password"
-          placeholder="Password"
-          style={styles.input}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+
+        {/* only show password field in login/register */}
+        {(mode === 'login' || mode === 'register') && (
+          <input
+            type="password"
+            placeholder="Password"
+            style={styles.input}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        )}
+
         {error && <div style={styles.error}>{error}</div>}
+        {message && <div style={styles.message}>{message}</div>}
+
         <button type="submit" style={styles.button}>
-          Continue
+          {mode === 'login'
+            ? 'Continue'
+            : mode === 'register'
+            ? 'Register'
+            : 'Send reset link'}
         </button>
       </form>
 
-      <a href="#" style={styles.forgot}>Forgot Password?</a>
+      {/* Forgot / Back link */}
+      {mode === 'login' && (
+        <button
+          onClick={() => {
+            setMode('forgot')
+            setError('')
+            setMessage('')
+          }}
+          style={styles.forgot}
+        >
+          Forgot Password?
+        </button>
+      )}
+      {mode === 'forgot' && (
+        <button
+          onClick={() => {
+            setMode('login')
+            setError('')
+            setMessage('')
+          }}
+          style={styles.forgot}
+        >
+          ← Back to Login
+        </button>
+      )}
     </div>
-  );
+  )
 }
 
 const styles = {
@@ -129,10 +194,16 @@ const styles = {
     display: 'inline-block',
     fontSize: 14,
     color: '#3b6ef6',
-    textDecoration: 'none',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
   },
   error: {
     color: 'red',
     fontSize: 14,
   },
-};
+  message: {
+    color: 'green',
+    fontSize: 14,
+  },
+}

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import WorkReport from './WorkReport';
-import ViewWorkReports from './ViewWorkReports'; // ✅ added
+import ViewWorkReports from './ViewWorkReports';
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const [screen, setScreen] = useState('home');
@@ -217,8 +217,12 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </div>
         )}
 
-        {screen === 'work' && <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />}
-        {screen === 'view-work' && <ViewWorkReports onBack={() => setScreen('home')} />}
+        {screen === 'work' && (
+          <WorkReport user={user} onLogout={onLogout} goHome={() => setScreen('home')} />
+        )}
+        {screen === 'view-work' && (
+          <ViewWorkReports onBack={() => setScreen('home')} />
+        )}
       </div>
     </div>
   );

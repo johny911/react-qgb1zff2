@@ -1,6 +1,7 @@
 // src/MainAttendanceApp.js
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
+import WorkReport from './WorkReport';
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const [screen, setScreen] = useState('home');
@@ -131,6 +132,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
             <h3 style={{ marginBottom: 24 }}>Welcome, {user.email.split('@')[0]}</h3>
             <button style={primaryBtn} onClick={() => setScreen('enter')}>➕ Enter Attendance</button>
             <button style={secondaryBtn} onClick={() => setScreen('view')}>👁️ View Attendance</button>
+            <button style={secondaryBtn} onClick={() => setScreen('work')}>📝 Work Done Report</button>
           </>
         )}
 
@@ -212,6 +214,8 @@ export default function MainAttendanceApp({ user, onLogout }) {
             <button style={secondaryBtn} onClick={() => setScreen('home')}>← Back</button>
           </div>
         )}
+
+        {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
       </div>
     </div>
   );

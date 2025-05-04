@@ -1,4 +1,4 @@
-// ✅ Full App with React Icons, Supabase Auth, and Mobile-Friendly UI
+// ✅ Full App with Supabase Auth, React Icons, Greeting Header, and Working UI
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -152,21 +152,24 @@ export default function App() {
           )}
         </div>
       </div>
+
       <div style={styles.container}>
-        {/* Continue UI here... */}
+        {screen === "home" && (
+          <div className="fade-in" style={styles.card}>
+            <h2 style={styles.heading}>Labour Attendance</h2>
+            <button style={styles.primaryBtn} onClick={() => setScreen("enter")}>➕ Enter Attendance</button>
+            <button style={styles.secondaryBtn} onClick={() => setScreen("view")}>👁️ View Attendance</button>
+          </div>
+        )}
+
+        {/* Add enter & view attendance screens here later */}
       </div>
     </div>
   );
 }
 
 const styles = {
-  wrapper: {
-    width: "100vw",
-    overflowX: "hidden",
-    background: "#f9fafe",
-    paddingBottom: "40px",
-    boxSizing: "border-box",
-  },
+  wrapper: { width: "100vw", overflowX: "hidden", background: "#f9fafe", minHeight: "100vh" },
   header: {
     display: "flex",
     justifyContent: "space-between",
@@ -180,8 +183,19 @@ const styles = {
     width: "100%",
     maxWidth: "100%",
     margin: "0 auto",
-    padding: "0 16px",
+    padding: "16px",
     fontFamily: "system-ui, sans-serif",
+  },
+  card: {
+    background: "#fff",
+    borderRadius: "14px",
+    padding: "20px 16px",
+    marginBottom: "20px",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+  },
+  heading: {
+    textAlign: "center",
+    marginBottom: 24,
   },
   input: {
     width: "100%",

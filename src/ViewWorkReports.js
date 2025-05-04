@@ -4,6 +4,8 @@ import { supabase } from './supabaseClient'
 
 export default function ViewWorkReports({ onBack }) {
   const [projects, setProjects] = useState([])
+  const [teams, setTeams] = useState([])
+  const [typesMap, setTypesMap] = useState({})
   const [selectedProject, setSelectedProject] = useState('')
   const [date, setDate] = useState(() =>
     new Date().toISOString().split('T')[0]
@@ -11,16 +13,36 @@ export default function ViewWorkReports({ onBack }) {
   const [works, setWorks] = useState([])
   const [loading, setLoading] = useState(false)
 
-  // Load projects on mount
+  // 1) Load projects, teams, and types on mount
   useEffect(() => {
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, name')
-      if (!error) setProjects(data || [])
-    })()
+    fetchProjects()
+    fetchTeamsAndTypes()
   }, [])
 
+  async function fetchProjects() {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name')
+    if (!error) setProjects(data || [])
+  }
+
+  async function fetchTeamsAndTypes() {
+    const [{ data: tData = [] }, { data: typeData = [] }] = await Promise.all([
+      supabase.from('labour_teams').select('id, name'),
+      supabase.from('labour_types').select('id, team_id, type_name'),
+    ])
+
+    setTeams(tData)
+    // build a map: team_id → [types]
+    const map = {}
+    typeData.forEach((t) => {
+      map[t.team_id] = map[t.team_id] || []
+      map[t.team_id].push(t)
+    })
+    setTypesMap(map)
+  }
+
+  // 2) Fetch the report + its work entries + labours
   const fetchReports = async () => {
     if (!selectedProject || !date) {
       alert('Select project and date')
@@ -29,8 +51,8 @@ export default function ViewWorkReports({ onBack }) {
     setLoading(true)
     setWorks([])
 
-    // 1) Get the latest report for this project+date
-    const { data: headers, error: hdrErr } = await supabase
+    // a) latest report header
+    const { data: headers = [], error: hdrErr } = await supabase
       .from('work_reports')
       .select('id')
       .eq('project_id', selectedProject)
@@ -38,48 +60,55 @@ export default function ViewWorkReports({ onBack }) {
       .order('id', { ascending: false })
       .limit(1)
 
-    if (hdrErr || !headers?.length) {
+    if (hdrErr || !headers.length) {
       setLoading(false)
-      alert('No work report found for that date/project')
+      alert('No work report found.')
       return
     }
     const reportId = headers[0].id
 
-    // 2) Fetch all work entries for that report
-    const { data: workEntries, error: weErr } = await supabase
+    // b) all work allotments for that report
+    const { data: workEntries = [], error: weErr } = await supabase
       .from('work_allotments')
       .select('id, work_description, quantity, uom')
       .eq('report_id', reportId)
 
     if (weErr) {
-      console.error('Work entries error', weErr)
-      alert('Error loading work entries')
+      console.error(weErr)
       setLoading(false)
+      alert('Error loading works.')
       return
     }
 
-    // 3) Fetch all labour allotments for these work IDs
+    // c) all labours for those work IDs
     const workIds = workEntries.map((w) => w.id)
-    const { data: labourRows, error: lbErr } = await supabase
+    const { data: labourRows = [], error: lbErr } = await supabase
       .from('work_report_labours')
-      .select('work_allotment_id, count, labour_teams(name), labour_types(type_name)')
+      .select('work_allotment_id, team_id, labour_type_id, count')
       .in('work_allotment_id', workIds)
 
     if (lbErr) {
-      console.error('Labour entries error', lbErr)
-      alert('Error loading labour entries')
+      console.error(lbErr)
       setLoading(false)
+      alert('Error loading labours.')
       return
     }
 
-    // 4) Group labours by work_allotment_id
+    // d) group labours by work_allotment_id
     const labourMap = {}
     labourRows.forEach((l) => {
-      labourMap[l.work_allotment_id] ??= []
-      labourMap[l.work_allotment_id].push(l)
+      labourMap[l.work_allotment_id] = labourMap[l.work_allotment_id] || []
+      labourMap[l.work_allotment_id].push({
+        ...l,
+        teamName:
+          teams.find((t) => t.id === l.team_id)?.name || 'Unknown Team',
+        typeName:
+          typesMap[l.team_id]?.find((tt) => tt.id === l.labour_type_id)
+            ?.type_name || 'Unknown Type',
+      })
     })
 
-    // 5) Build final works array
+    // e) attach labours to each work entry
     const finalWorks = workEntries.map((w) => ({
       ...w,
       labours: labourMap[w.id] || [],
@@ -92,7 +121,6 @@ export default function ViewWorkReports({ onBack }) {
   return (
     <div style={{ maxWidth: 460, margin: '0 auto', padding: 20 }}>
       <h3>View Work Done Report</h3>
-
       <select
         style={input}
         value={selectedProject}
@@ -123,14 +151,20 @@ export default function ViewWorkReports({ onBack }) {
 
       {works.map((w, i) => (
         <div key={i} style={card}>
-          <p><strong>Work:</strong> {w.work_description}</p>
-          <p><strong>Qty:</strong> {w.quantity} {w.uom}</p>
-          <p><strong>Labours:</strong></p>
+          <p>
+            <strong>Work:</strong> {w.work_description}
+          </p>
+          <p>
+            <strong>Qty:</strong> {w.quantity} {w.uom}
+          </p>
+          <p>
+            <strong>Labours:</strong>
+          </p>
           {w.labours.length > 0 ? (
             <ul>
               {w.labours.map((l, idx) => (
                 <li key={idx}>
-                  {l.labour_teams.name} – {l.labour_types.type_name} – {l.count} nos
+                  {l.teamName} – {l.typeName} – {l.count} nos
                 </li>
               ))}
             </ul>
@@ -156,7 +190,6 @@ const input = {
   border: '1px solid #ccc',
   boxSizing: 'border-box',
 }
-
 const primaryBtn = {
   background: '#3b6ef6',
   color: '#fff',
@@ -168,7 +201,6 @@ const primaryBtn = {
   cursor: 'pointer',
   marginBottom: 12,
 }
-
 const secondaryBtn = {
   background: '#eee',
   color: '#333',
@@ -180,7 +212,6 @@ const secondaryBtn = {
   cursor: 'pointer',
   marginTop: 12,
 }
-
 const card = {
   border: '1px solid #ddd',
   borderRadius: 8,

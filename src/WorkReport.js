@@ -7,9 +7,11 @@ export default function WorkReport({ onBack }) {
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
   const [selectedProject, setSelectedProject] = useState('')
-  const [date, setDate] = useState(() =>
-    new Date().toISOString().split('T')[0]
+  const [date, setDate] = useState(
+    () => new Date().toISOString().split('T')[0]
   )
+  const [attendanceMap, setAttendanceMap] = useState({})
+  const [remainingMap, setRemainingMap] = useState({})
   const [works, setWorks] = useState([
     {
       description: '',
@@ -18,10 +20,8 @@ export default function WorkReport({ onBack }) {
       labourAllotments: [{ teamId: '', typeId: '', count: '' }],
     },
   ])
-  const [attendanceMap, setAttendanceMap] = useState({})
-  const [remainingMap, setRemainingMap] = useState({})
 
-  // 1️⃣ Load projects, teams & types
+  // Load projects, teams, types
   useEffect(() => {
     ;(async () => {
       const { data: projectsData } = await supabase
@@ -34,19 +34,19 @@ export default function WorkReport({ onBack }) {
         .from('labour_types')
         .select('id,team_id,type_name')
 
-      const typeMap = {}
+      const map = {}
       typesData.forEach((t) => {
-        if (!typeMap[t.team_id]) typeMap[t.team_id] = []
-        typeMap[t.team_id].push(t)
+        if (!map[t.team_id]) map[t.team_id] = []
+        map[t.team_id].push(t)
       })
 
       setProjects(projectsData || [])
       setTeams(teamsData || [])
-      setTypes(typeMap)
+      setTypes(map)
     })()
   }, [])
 
-  // 2️⃣ Fetch attendance when project/date changes
+  // Fetch attendance & init remaining when project/date changes
   useEffect(() => {
     if (!selectedProject || !date) {
       setAttendanceMap({})
@@ -54,25 +54,23 @@ export default function WorkReport({ onBack }) {
       return
     }
     ;(async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('attendance')
         .select('*')
         .eq('project_id', selectedProject)
         .eq('date', date)
-      if (data) {
-        const att = {}
-        data.forEach((r) => {
-          const key = `${r.team_id}-${r.labour_type_id}`
-          att[key] = (att[key] || 0) + r.count
-        })
-        setAttendanceMap(att)
-        setRemainingMap({ ...att })
-      }
+      const att = {}
+      data.forEach((r) => {
+        const key = `${r.team_id}-${r.labour_type_id}`
+        att[key] = (att[key] || 0) + r.count
+      })
+      setAttendanceMap(att)
+      setRemainingMap({ ...att })
     })()
   }, [selectedProject, date])
 
-  // 3️⃣ Helpers to recalc remaining
-  const updateRemainingCounts = () => {
+  // Recalculate remaining whenever works change
+  const updateRemaining = () => {
     const used = {}
     works.forEach((w) =>
       w.labourAllotments.forEach((a) => {
@@ -81,68 +79,79 @@ export default function WorkReport({ onBack }) {
       })
     )
     const rem = {}
-    Object.keys(attendanceMap).forEach((key) => {
-      rem[key] = attendanceMap[key] - (used[key] || 0)
+    Object.keys(attendanceMap).forEach((k) => {
+      rem[k] = attendanceMap[k] - (used[k] || 0)
     })
     setRemainingMap(rem)
   }
 
-  // 4️⃣ Add/remove works & allotments
+  // Add a new work item
   const addWork = () =>
     setWorks([
       ...works,
-      { description: '', quantity: '', uom: '', labourAllotments: [{ teamId: '', typeId: '', count: '' }] },
+      {
+        description: '',
+        quantity: '',
+        uom: '',
+        labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+      },
     ])
-  const addAllotment = (wIdx) => {
+
+  // Add a labour line under a work item
+  const addLabour = (wIdx) => {
     const c = [...works]
     c[wIdx].labourAllotments.push({ teamId: '', typeId: '', count: '' })
     setWorks(c)
   }
 
-  // 5️⃣ Update handlers
+  // Update work fields
   const updateWork = (wIdx, field, val) => {
     const c = [...works]
     c[wIdx][field] = val
     setWorks(c)
   }
-  const updateAllot = (wIdx, aIdx, field, val) => {
+
+  // Update labour allotment fields
+  const updateLabour = (wIdx, aIdx, field, val) => {
     const c = [...works]
     c[wIdx].labourAllotments[aIdx][field] = val
+    // reset type if team changed
     if (field === 'teamId') c[wIdx].labourAllotments[aIdx].typeId = ''
     setWorks(c)
-    updateRemainingCounts()
+    updateRemaining()
   }
 
-  // 6️⃣ Submit into normalized tables
+  // Submit into normalized tables
   const handleSubmit = async () => {
-    if (!selectedProject || !date) {
-      return alert('Select project & date')
-    }
+    if (!selectedProject || !date)
+      return alert('Please select project and date')
+
     // basic validation
     for (let w of works) {
-      if (!w.description || !w.quantity || !w.uom) {
+      if (!w.description || !w.quantity || !w.uom)
         return alert('Fill all work fields')
-      }
       for (let a of w.labourAllotments) {
-        if (!a.teamId || !a.typeId || !a.count) {
+        if (!a.teamId || !a.typeId || !a.count)
           return alert('Fill all labour fields')
-        }
       }
     }
 
-    // insert report
-    const { data: report, error: rErr } = await supabase
+    // 1️⃣ Insert report
+    const { data: report, error: rptErr } = await supabase
       .from('work_reports')
       .insert({
         project_id: selectedProject,
         date,
-        description: `Report for ${date}`,
+        description: `Work report ${date}`,
       })
       .select()
       .single()
-    if (rErr) return alert(rErr.message)
+    if (rptErr) {
+      alert(rptErr.message)
+      return
+    }
 
-    // insert each work item & its labours
+    // 2️⃣ For each work item…
     for (let w of works) {
       const { data: wa, error: waErr } = await supabase
         .from('work_allotments')
@@ -155,20 +164,21 @@ export default function WorkReport({ onBack }) {
         .select()
         .single()
       if (waErr) {
-        console.error('Work insert error:', waErr)
+        console.error('Work insert error', waErr)
         continue
       }
 
-      const labourRows = w.labourAllotments.map((a) => ({
+      // 3️⃣ Insert its labour allocations
+      const rows = w.labourAllotments.map((a) => ({
         work_allotment_id: wa.id,
         team_id: a.teamId,
         labour_type_id: a.typeId,
         count: parseInt(a.count, 10),
       }))
-      const { error: lErr } = await supabase
+      const { error: labErr } = await supabase
         .from('work_report_labours')
-        .insert(labourRows)
-      if (lErr) console.error('Labour insert error:', lErr)
+        .insert(rows)
+      if (labErr) console.error('Labour insert error', labErr)
     }
 
     alert('✅ Work report submitted!')
@@ -199,14 +209,16 @@ export default function WorkReport({ onBack }) {
         onChange={(e) => setDate(e.target.value)}
       />
 
+      {/* Multiple work items */}
       {works.map((w, wIdx) => (
         <div key={wIdx} style={card}>
-          {/* Work fields */}
           <input
             placeholder='Work Description'
             style={input}
             value={w.description}
-            onChange={(e) => updateWork(wIdx, 'description', e.target.value)}
+            onChange={(e) =>
+              updateWork(wIdx, 'description', e.target.value)
+            }
           />
           <input
             placeholder='Quantity'
@@ -224,13 +236,12 @@ export default function WorkReport({ onBack }) {
           <p>
             <strong>Allotted Labours</strong>
           </p>
-
           {w.labourAllotments.map((a, aIdx) => {
             // only teams/types with attendance
-            const filteredTeams = teams.filter((t) =>
+            const tList = teams.filter((t) =>
               Object.keys(attendanceMap).some((k) => k.startsWith(`${t.id}-`))
             )
-            const filteredTypes =
+            const tyList =
               (types[a.teamId] || []).filter(
                 (t) => attendanceMap[`${a.teamId}-${t.id}`] > 0
               ) || []
@@ -241,11 +252,11 @@ export default function WorkReport({ onBack }) {
                   style={input}
                   value={a.teamId}
                   onChange={(e) =>
-                    updateAllot(wIdx, aIdx, 'teamId', e.target.value)
+                    updateLabour(wIdx, aIdx, 'teamId', e.target.value)
                   }
                 >
                   <option value=''>Select Team</option>
-                  {filteredTeams.map((t) => (
+                  {tList.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
@@ -256,12 +267,12 @@ export default function WorkReport({ onBack }) {
                   style={input}
                   value={a.typeId}
                   onChange={(e) =>
-                    updateAllot(wIdx, aIdx, 'typeId', e.target.value)
+                    updateLabour(wIdx, aIdx, 'typeId', e.target.value)
                   }
                   disabled={!a.teamId}
                 >
                   <option value=''>Select Type</option>
-                  {filteredTypes.map((t) => (
+                  {tyList.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.type_name}
                     </option>
@@ -274,15 +285,14 @@ export default function WorkReport({ onBack }) {
                   style={input}
                   value={a.count}
                   onChange={(e) =>
-                    updateAllot(wIdx, aIdx, 'count', e.target.value)
+                    updateLabour(wIdx, aIdx, 'count', e.target.value)
                   }
                 />
 
-                {/* Remaining for this team-type */}
                 {a.teamId && a.typeId && (
                   <p style={{ color: 'red' }}>
-                    Remaining:{' '}
-                    {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos
+                    Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0}{' '}
+                    nos
                   </p>
                 )}
               </div>
@@ -291,13 +301,14 @@ export default function WorkReport({ onBack }) {
 
           <button
             style={secondaryBtn}
-            onClick={() => addAllotment(wIdx)}
+            onClick={() => addLabour(wIdx)}
           >
             + Add Labour
           </button>
         </div>
       ))}
 
+      {/* Add another work item */}
       <button style={secondaryBtn} onClick={addWork}>
         + Add Work
       </button>
@@ -311,6 +322,7 @@ export default function WorkReport({ onBack }) {
   )
 }
 
+// common styles
 const input = {
   width: '100%',
   padding: 8,

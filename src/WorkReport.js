@@ -8,7 +8,6 @@ export default function WorkReport({ onBack }) {
   const [types, setTypes] = useState({});
   const [selectedProject, setSelectedProject] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [reportDescription, setReportDescription] = useState('');
   const [works, setWorks] = useState([
     {
       description: '',
@@ -130,7 +129,7 @@ export default function WorkReport({ onBack }) {
       .insert({
         date,
         project_id: selectedProject,
-        description: reportDescription || 'Work done report submitted via app'
+        description: `Work Report for ${date}`,
       })
       .select()
       .single();
@@ -176,7 +175,6 @@ export default function WorkReport({ onBack }) {
         ))}
       </select>
       <input type='date' style={input} value={date} onChange={(e) => setDate(e.target.value)} />
-      <input placeholder='Report Description' style={input} value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} />
 
       {works.map((work, wIdx) => (
         <div key={wIdx} style={{ border: '1px solid #ccc', padding: 12, borderRadius: 10, marginBottom: 12 }}>

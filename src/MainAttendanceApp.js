@@ -50,8 +50,8 @@ export default function MainAttendanceApp({ user, onLogout }) {
       setAttendanceMarked(true);
       setRows(
         data.map((r) => ({
-          teamId: r.team_id,
-          typeId: r.labour_type_id,
+          teamId: String(r.team_id),
+          typeId: String(r.labour_type_id),
           count: r.count.toString(),
         }))
       );
@@ -199,8 +199,8 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 <h4>Summary</h4>
                 <ul>
                   {rows.map((r, i) => {
-                    const teamName = teams.find((t) => t.id.toString() === r.teamId)?.name || 'Unknown Team';
-                    const typeName = types[r.teamId]?.find((t) => t.id.toString() === r.typeId)?.type_name || 'Unknown Type';
+                    const teamName = teams.find((t) => String(t.id) === String(r.teamId))?.name || 'Unknown Team';
+                    const typeName = types[r.teamId]?.find((t) => String(t.id) === String(r.typeId))?.type_name || 'Unknown Type';
                     return (
                       <li key={i}>{teamName} – {typeName} – {r.count} nos</li>
                     );

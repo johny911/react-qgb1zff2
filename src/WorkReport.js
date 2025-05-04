@@ -6,20 +6,28 @@ export default function WorkReport({ onBack }) {
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState({});
-  const [projectId, setProjectId] = useState('');
+  const [selectedProject, setSelectedProject] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [attendance, setAttendance] = useState([]);
-  const [workItems, setWorkItems] = useState([
-    { description: '', quantity: '', uom: '', allotments: [] }
+  const [works, setWorks] = useState([
+    {
+      description: '',
+      quantity: '',
+      uom: '',
+      labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+    },
   ]);
+  const [attendanceMap, setAttendanceMap] = useState({});
+  const [remainingMap, setRemainingMap] = useState({});
 
   useEffect(() => {
     fetchBaseData();
   }, []);
 
   useEffect(() => {
-    if (projectId && date) fetchAttendance();
-  }, [projectId, date]);
+    if (selectedProject && date) {
+      fetchAttendance();
+    }
+  }, [selectedProject, date]);
 
   const fetchBaseData = async () => {
     const { data: projectsData } = await supabase.from('projects').select('*');
@@ -38,102 +46,86 @@ export default function WorkReport({ onBack }) {
   };
 
   const fetchAttendance = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('attendance')
       .select('*')
-      .eq('project_id', projectId)
+      .eq('project_id', selectedProject)
       .eq('date', date);
 
-    setAttendance(data || []);
+    if (error || !data) return;
+
+    const attendance = {};
+    data.forEach((row) => {
+      const key = `${row.team_id}-${row.labour_type_id}`;
+      attendance[key] = (attendance[key] || 0) + row.count;
+    });
+    setAttendanceMap(attendance);
+    setRemainingMap({ ...attendance });
   };
 
-  const getAvailableLabours = (teamId, typeId) => {
-    const total = attendance.find(
-      (a) => a.team_id === parseInt(teamId) && a.labour_type_id === parseInt(typeId)
-    )?.count || 0;
-
-    const used = workItems.reduce((acc, w) => {
-      return (
-        acc +
-        w.allotments.reduce((sum, a) => {
-          if (a.teamId === teamId && a.typeId === typeId) {
-            return sum + parseInt(a.count || '0');
-          }
-          return sum;
-        }, 0)
-      );
-    }, 0);
-
-    return { total, used, remaining: total - used };
-  };
-
-  const addWorkItem = () => {
-    setWorkItems([...workItems, { description: '', quantity: '', uom: '', allotments: [] }]);
-  };
-
-  const updateWorkItem = (index, field, value) => {
-    const updated = [...workItems];
+  const handleWorkChange = (index, field, value) => {
+    const updated = [...works];
     updated[index][field] = value;
-    setWorkItems(updated);
+    setWorks(updated);
   };
 
-  const updateAllotment = (workIndex, allotIndex, field, value) => {
-    const updated = [...workItems];
-    updated[workIndex].allotments[allotIndex][field] = value;
-    setWorkItems(updated);
+  const handleAllotmentChange = (wIdx, aIdx, field, value) => {
+    const updated = [...works];
+    const allotment = updated[wIdx].labourAllotments[aIdx];
+    allotment[field] = value;
+    if (field === 'teamId') allotment.typeId = '';
+    setWorks(updated);
+
+    // update remaining map
+    if (field === 'count') {
+      updateRemainingCounts();
+    }
   };
 
-  const addAllotment = (workIndex) => {
-    const updated = [...workItems];
-    updated[workIndex].allotments.push({ teamId: '', typeId: '', count: '' });
-    setWorkItems(updated);
+  const updateRemainingCounts = () => {
+    const used = {};
+    works.forEach((w) => {
+      w.labourAllotments.forEach((a) => {
+        const key = `${a.teamId}-${a.typeId}`;
+        used[key] = (used[key] || 0) + parseInt(a.count || '0');
+      });
+    });
+    const remaining = {};
+    for (let key in attendanceMap) {
+      remaining[key] = attendanceMap[key] - (used[key] || 0);
+    }
+    setRemainingMap(remaining);
+  };
+
+  const addWork = () => {
+    setWorks([
+      ...works,
+      {
+        description: '',
+        quantity: '',
+        uom: '',
+        labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+      },
+    ]);
+  };
+
+  const addAllotment = (index) => {
+    const updated = [...works];
+    updated[index].labourAllotments.push({ teamId: '', typeId: '', count: '' });
+    setWorks(updated);
   };
 
   const canSubmit = () => {
-    const totalAttendance = attendance.reduce((sum, a) => sum + a.count, 0);
-    const totalAllotted = workItems.reduce((acc, w) => {
-      return acc + w.allotments.reduce((sum, a) => sum + parseInt(a.count || '0'), 0);
-    }, 0);
-    return totalAllotted === totalAttendance;
-  };
-
-  const handleSubmit = async () => {
-    if (!canSubmit()) return alert('All labours must be allotted before submitting');
-    const { error, data } = await supabase
-      .from('work_reports')
-      .insert({ project_id: projectId, date });
-
-    if (error) return alert('Error creating report');
-
-    const reportId = data[0].id;
-    for (const work of workItems) {
-      const { data: workData, error: workError } = await supabase
-        .from('work_allotments')
-        .insert({
-          report_id: reportId,
-          work_description: work.description,
-          quantity: work.quantity,
-          uom: work.uom
-        })
-        .select();
-
-      const allotments = work.allotments.map((a) => ({
-        report_id: reportId,
-        work_description: work.description,
-        team_id: a.teamId,
-        labour_type_id: a.typeId,
-        count: parseInt(a.count)
-      }));
-      await supabase.from('work_report_labours').insert(allotments);
+    for (let key in remainingMap) {
+      if (remainingMap[key] !== 0) return false;
     }
-    alert('Report submitted!');
-    onBack();
+    return true;
   };
 
   return (
     <div>
       <h3>Work Done Report</h3>
-      <select style={input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+      <select style={input} value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
         <option value=''>-- Select Project --</option>
         {projects.map((p) => (
           <option key={p.id} value={p.id}>{p.name}</option>
@@ -141,64 +133,47 @@ export default function WorkReport({ onBack }) {
       </select>
       <input type='date' style={input} value={date} onChange={(e) => setDate(e.target.value)} />
 
-      {workItems.map((work, wIndex) => (
-        <div key={wIndex} style={{ border: '1px solid #ccc', padding: 12, borderRadius: 10, marginBottom: 20 }}>
-          <input
-            style={input}
-            placeholder='Work Description'
-            value={work.description}
-            onChange={(e) => updateWorkItem(wIndex, 'description', e.target.value)}
-          />
-          <input
-            style={input}
-            placeholder='Quantity'
-            value={work.quantity}
-            onChange={(e) => updateWorkItem(wIndex, 'quantity', e.target.value)}
-          />
-          <input
-            style={input}
-            placeholder='UOM'
-            value={work.uom}
-            onChange={(e) => updateWorkItem(wIndex, 'uom', e.target.value)}
-          />
-
-          <h4>Allotted Labours</h4>
-          {work.allotments.map((a, i) => {
-            const rem = getAvailableLabours(a.teamId, a.typeId);
+      {works.map((work, wIdx) => (
+        <div key={wIdx} style={{ border: '1px solid #ccc', padding: 12, borderRadius: 10, marginBottom: 12 }}>
+          <input placeholder='Work Description' style={input} value={work.description} onChange={(e) => handleWorkChange(wIdx, 'description', e.target.value)} />
+          <input placeholder='Quantity' style={input} value={work.quantity} onChange={(e) => handleWorkChange(wIdx, 'quantity', e.target.value)} />
+          <input placeholder='UOM' style={input} value={work.uom} onChange={(e) => handleWorkChange(wIdx, 'uom', e.target.value)} />
+          <p><strong>Allotted Labours</strong></p>
+          {work.labourAllotments.map((a, aIdx) => {
+            const filteredTeams = teams.filter((t) => {
+              return Object.keys(attendanceMap).some((key) => key.startsWith(`${t.id}-`));
+            });
+            const filteredTypes = types[a.teamId]?.filter((t) => {
+              return attendanceMap[`${a.teamId}-${t.id}`];
+            }) || [];
             return (
-              <div key={i} style={{ borderTop: '1px dashed #ccc', paddingTop: 8, marginBottom: 12 }}>
-                <p style={{ color: 'red', fontWeight: 'bold' }}>
-                  Remaining: {rem.used}/{rem.total} labours
-                </p>
-                <select style={input} value={a.teamId} onChange={(e) => updateAllotment(wIndex, i, 'teamId', e.target.value)}>
+              <div key={aIdx}>
+                <select style={input} value={a.teamId} onChange={(e) => handleAllotmentChange(wIdx, aIdx, 'teamId', e.target.value)}>
                   <option value=''>Select Team</option>
-                  {teams.map((t) => (
+                  {filteredTeams.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
-                <select style={input} value={a.typeId} onChange={(e) => updateAllotment(wIndex, i, 'typeId', e.target.value)}>
+                <select style={input} value={a.typeId} onChange={(e) => handleAllotmentChange(wIdx, aIdx, 'typeId', e.target.value)}>
                   <option value=''>Select Type</option>
-                  {(types[a.teamId] || []).map((t) => (
+                  {filteredTypes.map((t) => (
                     <option key={t.id} value={t.id}>{t.type_name}</option>
                   ))}
                 </select>
-                <input
-                  style={input}
-                  placeholder='No. of Labours'
-                  value={a.count}
-                  onChange={(e) => updateAllotment(wIndex, i, 'count', e.target.value)}
-                />
+                <input type='number' placeholder='Count' style={input} value={a.count} onChange={(e) => handleAllotmentChange(wIdx, aIdx, 'count', e.target.value)} />
+                {a.teamId && a.typeId && (
+                  <p style={{ color: 'red' }}>
+                    Remaining: {remainingMap[`${a.teamId}-${a.typeId}`] || 0} nos
+                  </p>
+                )}
               </div>
             );
           })}
-          <button style={secondaryBtn} onClick={() => addAllotment(wIndex)}>+ Add Allotment</button>
+          <button style={secondaryBtn} onClick={() => addAllotment(wIdx)}>+ Add Labour</button>
         </div>
       ))}
-
-      <button style={secondaryBtn} onClick={addWorkItem}>+ Add Work</button>
-      <button style={primaryBtn} onClick={handleSubmit} disabled={!canSubmit()}>
-        ✅ Submit Report
-      </button>
+      <button style={secondaryBtn} onClick={addWork}>+ Add Work</button>
+      <button style={primaryBtn} disabled={!canSubmit()}>✅ Submit Work Report</button>
       <button style={secondaryBtn} onClick={onBack}>← Back</button>
     </div>
   );

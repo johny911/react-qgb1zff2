@@ -29,7 +29,7 @@ export default function ViewWorkReports({ onBack }) {
       .eq('project_id', selectedProject)
       .eq('date', date);
 
-    if (headerError || !reportHeaders?.length) {
+    if (headerError || !reportHeaders || reportHeaders.length === 0) {
       setLoading(false);
       return alert('No reports found.');
     }
@@ -45,19 +45,15 @@ export default function ViewWorkReports({ onBack }) {
         uom,
         work_report_labours (
           count,
-          labour_types!labour_type_id (
-            type_name
-          ),
-          labour_teams!team_id (
-            name
-          )
+          labour_types (type_name),
+          labour_teams (name)
         )
       `)
       .eq('report_id', reportId);
 
     if (workError) {
-      console.error('Fetch error:', workError);
-      alert('❌ Error loading report. See console for details.');
+      console.error('Fetch error:', workError.message);
+      alert('Error loading report.');
       setLoading(false);
       return;
     }

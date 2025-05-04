@@ -1,4 +1,4 @@
-// ✅ Full App with Supabase Auth, React Icons, Greeting Header, and Working UI
+// ✅ Full App with Working Navigation, Attendance Entry, View Attendance, Preview Summary, and Supabase Auth
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -103,6 +103,7 @@ export default function App() {
       alert("Attendance submitted!");
       setRows([{ teamId: "", typeId: "", count: "" }]);
       setShowPreview(false);
+      setScreen("home");
     }
     setLoading(false);
   };
@@ -162,7 +163,68 @@ export default function App() {
           </div>
         )}
 
-        {/* Add enter & view attendance screens here later */}
+        {screen === "enter" && (
+          <div style={styles.card}>
+            <h3>Enter Attendance</h3>
+            <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+            {rows.map((row, index) => (
+              <div key={index} style={styles.rowCard}>
+                <button style={styles.deleteBtn} onClick={() => deleteRow(index)}>×</button>
+                <select style={styles.input} value={row.teamId} onChange={(e) => handleRowChange(index, "teamId", e.target.value)}>
+                  <option value="">-- Select Team --</option>
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                </select>
+                <select style={styles.input} value={row.typeId} onChange={(e) => handleRowChange(index, "typeId", e.target.value)} disabled={!row.teamId}>
+                  <option value="">-- Select Type --</option>
+                  {(types[row.teamId] || []).map((type) => (
+                    <option key={type.id} value={type.id}>{type.type_name}</option>
+                  ))}
+                </select>
+                <input style={styles.input} type="number" placeholder="No. of Batches" value={row.count} onChange={(e) => handleRowChange(index, "count", e.target.value)} />
+              </div>
+            ))}
+            <button style={styles.primaryBtn} onClick={addRow}>+ Add Team</button>
+            <button style={styles.secondaryBtn} onClick={() => setShowPreview(true)}>👁️ Preview Summary</button>
+            {showPreview && (
+              <div style={{ marginTop: 16 }}>
+                <h4>Summary</h4>
+                <ul>
+                  {rows.map((r, i) => {
+                    const team = teams.find(t => t.id == r.teamId)?.name || "Team";
+                    const type = types[r.teamId]?.find(t => t.id == r.typeId)?.type_name || "Type";
+                    return <li key={i}>{team} – {type} – {r.count} nos</li>;
+                  })}
+                </ul>
+                <button style={styles.successBtn} onClick={handleSubmit}>✅ Submit Attendance</button>
+              </div>
+            )}
+            <button style={styles.secondaryBtn} onClick={() => setScreen("home")}>🔙 Back</button>
+          </div>
+        )}
+
+        {screen === "view" && (
+          <div style={styles.card}>
+            <h3>View Attendance</h3>
+            <select style={styles.input} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input type="date" style={styles.input} value={date} onChange={(e) => setDate(e.target.value)} />
+            <button style={styles.primaryBtn} onClick={fetchAttendance}>View</button>
+            {viewResults.length > 0 && (
+              <ul>
+                {viewResults.map((r, i) => (
+                  <li key={i}>{r.labour_teams.name} – {r.labour_types.type_name} – {r.count} nos</li>
+                ))}
+              </ul>
+            )}
+            <button style={styles.secondaryBtn} onClick={() => setScreen("home")}>🔙 Back</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -171,61 +233,48 @@ export default function App() {
 const styles = {
   wrapper: { width: "100vw", overflowX: "hidden", background: "#f9fafe", minHeight: "100vh" },
   header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "16px 20px",
-    background: "#fff",
-    borderBottom: "1px solid #eee",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: "16px 20px", background: "#fff", borderBottom: "1px solid #eee",
     boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
   },
   container: {
-    width: "100%",
-    maxWidth: "100%",
-    margin: "0 auto",
-    padding: "16px",
+    width: "100%", maxWidth: "100%", margin: "0 auto", padding: "16px",
     fontFamily: "system-ui, sans-serif",
   },
   card: {
-    background: "#fff",
-    borderRadius: "14px",
-    padding: "20px 16px",
-    marginBottom: "20px",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+    background: "#fff", borderRadius: "14px", padding: "20px 16px",
+    marginBottom: "20px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
   },
   heading: {
-    textAlign: "center",
-    marginBottom: 24,
+    textAlign: "center", marginBottom: 24,
   },
   input: {
-    width: "100%",
-    padding: "12px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: "1px solid #ccc",
-    marginBottom: "12px",
-    boxSizing: "border-box",
+    width: "100%", padding: "12px", fontSize: "16px", borderRadius: "10px",
+    border: "1px solid #ccc", marginBottom: "12px", boxSizing: "border-box",
+  },
+  rowCard: {
+    background: "#fafafa", border: "1px solid #ddd", borderRadius: "12px",
+    padding: "16px", marginBottom: "16px", position: "relative",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+  },
+  deleteBtn: {
+    position: "absolute", top: 10, right: 10, background: "#d32f2f",
+    color: "#fff", border: "none", borderRadius: "50%", width: 28, height: 28,
+    fontWeight: "bold", cursor: "pointer",
   },
   primaryBtn: {
-    width: "100%",
-    padding: "14px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: "none",
-    background: "#1976d2",
-    color: "#fff",
-    marginBottom: "12px",
-    cursor: "pointer",
+    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
+    border: "none", background: "#1976d2", color: "#fff",
+    marginBottom: "12px", cursor: "pointer",
+  },
+  successBtn: {
+    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
+    border: "none", background: "#2e7d32", color: "#fff",
+    marginBottom: "12px", cursor: "pointer",
   },
   secondaryBtn: {
-    width: "100%",
-    padding: "14px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: "none",
-    background: "#666",
-    color: "#fff",
-    marginBottom: "12px",
-    cursor: "pointer",
+    width: "100%", padding: "14px", fontSize: "16px", borderRadius: "10px",
+    border: "none", background: "#666", color: "#fff",
+    marginBottom: "12px", cursor: "pointer",
   },
 };

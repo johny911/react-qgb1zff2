@@ -13,8 +13,6 @@ import {
 import { supabase } from './supabaseClient'
 import WorkReport from './WorkReport'
 import ViewWorkReports from './ViewWorkReports'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const [screen, setScreen] = useState('home')
@@ -104,11 +102,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
     ) {
       return alert('Please fill all fields')
     }
+    // delete old
     await supabase
       .from('attendance')
       .delete()
       .eq('project_id', projectId)
       .eq('date', date)
+    // insert new
     const payload = rows.map((r) => ({
       project_id: projectId,
       date,
@@ -137,22 +137,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     setViewResults(data || [])
   }
 
-  const downloadPDF = () => {
-    const doc = new jsPDF()
-    const projectName = projects.find(p => p.id == projectId)?.name || 'N/A'
-    doc.setFontSize(16)
-    doc.text('SiteTrack Attendance Report', 14, 20)
-    doc.setFontSize(12)
-    doc.text(`Project: ${projectName}`, 14, 30)
-    doc.text(`Date: ${date}`, 14, 38)
-    autoTable(doc, {
-      startY: 45,
-      head: [['Team', 'Type', 'Count']],
-      body: viewResults.map(r => [r.labour_teams.name, r.labour_types.type_name, r.count])
-    })
-    doc.save(`Attendance-${projectName}-${date}.pdf`)
-  }
-
   return (
     <Box bg="gray.50" minH="100vh" py={8} px={4}>
       <Box
@@ -170,6 +154,19 @@ export default function MainAttendanceApp({ user, onLogout }) {
             Logout
           </Button>
         </Flex>
+
+        {/* Home */}
+        {screen === 'home' && (
+          <Stack spacing={4}>
+            <Text fontSize="lg">Welcome, {user.email.split('@')[0]}</Text>
+            <Button colorScheme="blue" onClick={() => setScreen('enter')}>
+              + Enter Attendance
+            </Button>
+            <Button onClick={() => setScreen('view')}>View Attendance</Button>
+            <Button onClick={() => setScreen('work')}>Work Done Report</Button>
+            <Button onClick={() => setScreen('view-work')}>View Work Done Report</Button>
+          </Stack>
+        )}
 
         {/* View Attendance */}
         {screen === 'view' && (
@@ -194,9 +191,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
             <Button colorScheme="blue" onClick={fetchAttendance}>
               View
             </Button>
-            <Button colorScheme="green" onClick={downloadPDF}>
-              Download as PDF
-            </Button>
             <Stack pt={2} spacing={2}>
               {viewResults.map((r, i) => (
                 <Text key={i}>
@@ -210,10 +204,126 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* Other Screens (unchanged) */}
-        {screen === 'home' && ( /* ... */ )}
-        {screen === 'enter' && ( /* ... */ )}
+        {/* Enter / Edit Attendance */}
+        {screen === 'enter' && (
+          <Stack spacing={4}>
+            <Heading size="sm">Enter Attendance</Heading>
+            <Select
+              placeholder="Select Project"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              isDisabled={!editMode}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              isDisabled={!editMode}
+            />
+            {attendanceMarked && !editMode && (
+              <Flex align="center">
+                <Text color="green.500">✅ Attendance already marked</Text>
+                <Button size="sm" ml={4} onClick={() => setEditMode(true)}>
+                  ✏️ Edit
+                </Button>
+              </Flex>
+            )}
+
+            {rows.map((r, i) => (
+              <Box key={i} bg="gray.100" p={4} borderRadius="md">
+                <Flex justify="flex-end" mb={2}>
+                  <Button
+                    size="xs"
+                    colorScheme="red"
+                    onClick={() => deleteRow(i)}
+                    visibility={editMode ? 'visible' : 'hidden'}
+                  >
+                    ×
+                  </Button>
+                </Flex>
+                <Stack spacing={2}>
+                  <Select
+                    placeholder="Team"
+                    value={r.teamId}
+                    onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
+                    isDisabled={!editMode}
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    placeholder="Type"
+                    value={r.typeId}
+                    onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}
+                    isDisabled={!editMode || !r.teamId}
+                  >
+                    {(types[r.teamId] || []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.type_name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    placeholder="No. of Batches"
+                    type="number"
+                    value={r.count}
+                    onChange={(e) => handleRowChange(i, 'count', e.target.value)}
+                    isDisabled={!editMode}
+                  />
+                </Stack>
+              </Box>
+            ))}
+
+            {editMode && (
+              <>
+                <Button colorScheme="blue" onClick={addRow}>
+                  + Add Team
+                </Button>
+                <Button onClick={() => setShowPreview(true)}>Preview Summary</Button>
+                {showPreview && (
+                  <Box pt={4}>
+                    <Heading size="xs" mb={2}>
+                      Summary
+                    </Heading>
+                    <Stack spacing={1} mb={4}>
+                      {rows.map((r, i) => {
+                        const name = teams.find((t) => t.id == r.teamId)?.name || 'Team'
+                        const typeName =
+                          types[r.teamId]?.find((x) => x.id == r.typeId)?.type_name || 'Type'
+                        return (
+                          <Text key={i}>
+                            {name} – {typeName} – {r.count} nos
+                          </Text>
+                        )
+                      })}
+                    </Stack>
+                    <Button colorScheme="green" onClick={handleSubmit}>
+                      ✅ Save Attendance
+                    </Button>
+                  </Box>
+                )}
+              </>
+            )}
+
+            <Button variant="outline" onClick={() => setScreen('home')}>
+              ← Back
+            </Button>
+          </Stack>
+        )}
+
+        {/* Work Done Report */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
+
+        {/* View Work Reports */}
         {screen === 'view-work' && (
           <ViewWorkReports onBack={() => setScreen('home')} />
         )}

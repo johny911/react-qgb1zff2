@@ -12,6 +12,9 @@ export default function AdminDashboard({ user, onLogout }) {
   const [assignedUserId, setAssignedUserId] = useState('');
 
   const [newProject, setNewProject] = useState('');
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
+
   const [newTeam, setNewTeam] = useState('');
   const [newType, setNewType] = useState({ team_id: '', type_name: '' });
 
@@ -35,6 +38,28 @@ export default function AdminDashboard({ user, onLogout }) {
     if (!newProject.trim()) return;
     await supabase.from('projects').insert({ name: newProject });
     setNewProject('');
+    fetchAll();
+  };
+
+  const startEditProject = (id, name) => {
+    setEditingProjectId(id);
+    setEditingProjectName(name);
+  };
+
+  const saveProjectEdit = async () => {
+    if (!editingProjectName.trim()) return;
+    await supabase
+      .from('projects')
+      .update({ name: editingProjectName })
+      .eq('id', editingProjectId);
+    setEditingProjectId(null);
+    setEditingProjectName('');
+    fetchAll();
+  };
+
+  const deleteProject = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this project?')) return;
+    await supabase.from('projects').delete().eq('id', id);
     fetchAll();
   };
 
@@ -82,7 +107,27 @@ export default function AdminDashboard({ user, onLogout }) {
           />
           <button onClick={addProject}>Add</button>
           <ul>
-            {projects.map((p) => <li key={p.id}>{p.name}</li>)}
+            {projects.map((p) => (
+              <li key={p.id}>
+                {editingProjectId === p.id ? (
+                  <>
+                    <input
+                      value={editingProjectName}
+                      onChange={(e) => setEditingProjectName(e.target.value)}
+                      style={{ marginRight: 8 }}
+                    />
+                    <button onClick={saveProjectEdit}>Save</button>
+                    <button onClick={() => setEditingProjectId(null)}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    {p.name}{' '}
+                    <button onClick={() => startEditProject(p.id, p.name)}>✏️</button>{' '}
+                    <button onClick={() => deleteProject(p.id)} style={{ color: 'red' }}>🗑️</button>
+                  </>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       )}

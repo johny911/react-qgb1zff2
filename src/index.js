@@ -1,12 +1,11 @@
-// src/index.js
-import React, { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { ChakraProvider } from '@chakra-ui/react'
+import React, { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { ChakraProvider } from '@chakra-ui/react';
 
-import App from './App'
+import App from './App';
 
-const rootElement = document.getElementById('root')
-const root = createRoot(rootElement)
+const rootElement = document.getElementById('root');
+const root = createRoot(rootElement);
 
 root.render(
   <StrictMode>
@@ -14,18 +13,26 @@ root.render(
       <App />
     </ChakraProvider>
   </StrictMode>
-)
+);
 
-// Register the PWA service worker
+// ✅ Register service worker for PWA with auto-refresh on update
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/service-worker.js')
       .then((registration) => {
-        console.log('ServiceWorker registration successful with scope: ', registration.scope)
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                console.log('New content available, refreshing...');
+                window.location.reload();
+              }
+            }
+          };
+        };
       })
-      .catch((err) => {
-        console.error('ServiceWorker registration failed: ', err)
-      })
-  })
+      .catch((err) => console.error('SW registration failed: ', err));
+  });
 }

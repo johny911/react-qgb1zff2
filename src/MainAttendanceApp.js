@@ -138,7 +138,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   return (
-    <Box bg="gray.50" minH="100vh" py={8}>
+    <Box bg="gray.50" minH="100vh" py={8} px={4}>
       <Box
         maxW="460px"
         bg="white"
@@ -148,9 +148,9 @@ export default function MainAttendanceApp({ user, onLogout }) {
         shadow="md"
       >
         {/* Header */}
-        <Flex justify="space-between" align="center" mb={6}>
-          <Heading size="md">🏗️ SiteTrack</Heading>
-          <Button size="sm" variant="outline" onClick={onLogout}>
+        <Flex justify="space-between" align="center" mb={6} wrap="wrap">
+          <Heading size="md">SiteTrack</Heading>
+          <Button size="sm" variant="outline" onClick={onLogout} mt={{ base: 2, md: 0 }}>
             Logout
           </Button>
         </Flex>
@@ -160,17 +160,11 @@ export default function MainAttendanceApp({ user, onLogout }) {
           <Stack spacing={4}>
             <Text fontSize="lg">Welcome, {user.email.split('@')[0]}</Text>
             <Button colorScheme="blue" onClick={() => setScreen('enter')}>
-              ➕ Enter Attendance
+              + Enter Attendance
             </Button>
-            <Button onClick={() => setScreen('view')}>
-              👁️ View Attendance
-            </Button>
-            <Button onClick={() => setScreen('work')}>
-              📝 Work Done Report
-            </Button>
-            <Button onClick={() => setScreen('view-work')}>
-              👁️ View Work Done Report
-            </Button>
+            <Button onClick={() => setScreen('view')}>View Attendance</Button>
+            <Button onClick={() => setScreen('work')}>Work Done Report</Button>
+            <Button onClick={() => setScreen('view-work')}>View Work Done Report</Button>
           </Stack>
         )}
 
@@ -200,8 +194,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
             <Stack pt={2} spacing={2}>
               {viewResults.map((r, i) => (
                 <Text key={i}>
-                  {r.labour_teams.name} – {r.labour_types.type_name} –{' '}
-                  {r.count} nos
+                  {r.labour_teams.name} – {r.labour_types.type_name} – {r.count} nos
                 </Text>
               ))}
             </Stack>
@@ -236,62 +229,57 @@ export default function MainAttendanceApp({ user, onLogout }) {
             {attendanceMarked && !editMode && (
               <Flex align="center">
                 <Text color="green.500">✅ Attendance already marked</Text>
-                <Button
-                  size="sm"
-                  ml={4}
-                  onClick={() => setEditMode(true)}
-                >
+                <Button size="sm" ml={4} onClick={() => setEditMode(true)}>
                   ✏️ Edit
                 </Button>
               </Flex>
             )}
 
             {rows.map((r, i) => (
-              <Box key={i} position="relative" bg="gray.100" p={4} borderRadius="md">
-                <Button
-                  size="xs"
-                  position="absolute"
-                  top={2}
-                  right={2}
-                  colorScheme="red"
-                  onClick={() => deleteRow(i)}
-                  visibility={editMode ? 'visible' : 'hidden'}
-                >
-                  ×
-                </Button>
-                <Select
-                  placeholder="Team"
-                  mb={2}
-                  value={r.teamId}
-                  onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
-                  isDisabled={!editMode}
-                >
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select
-                  placeholder="Type"
-                  mb={2}
-                  value={r.typeId}
-                  onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}
-                  isDisabled={!editMode || !r.teamId}
-                >
-                  {(types[r.teamId] || []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.type_name}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  placeholder="No. of Batches"
-                  type="number"
-                  value={r.count}
-                  onChange={(e) => handleRowChange(i, 'count', e.target.value)}
-                  isDisabled={!editMode}
-                />
+              <Box key={i} bg="gray.100" p={4} borderRadius="md">
+                <Flex justify="flex-end" mb={2}>
+                  <Button
+                    size="xs"
+                    colorScheme="red"
+                    onClick={() => deleteRow(i)}
+                    visibility={editMode ? 'visible' : 'hidden'}
+                  >
+                    ×
+                  </Button>
+                </Flex>
+                <Stack spacing={2}>
+                  <Select
+                    placeholder="Team"
+                    value={r.teamId}
+                    onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
+                    isDisabled={!editMode}
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    placeholder="Type"
+                    value={r.typeId}
+                    onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}
+                    isDisabled={!editMode || !r.teamId}
+                  >
+                    {(types[r.teamId] || []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.type_name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    placeholder="No. of Batches"
+                    type="number"
+                    value={r.count}
+                    onChange={(e) => handleRowChange(i, 'count', e.target.value)}
+                    isDisabled={!editMode}
+                  />
+                </Stack>
               </Box>
             ))}
 
@@ -300,9 +288,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 <Button colorScheme="blue" onClick={addRow}>
                   + Add Team
                 </Button>
-                <Button onClick={() => setShowPreview(true)}>
-                  👁️ Preview Summary
-                </Button>
+                <Button onClick={() => setShowPreview(true)}>Preview Summary</Button>
                 {showPreview && (
                   <Box pt={4}>
                     <Heading size="xs" mb={2}>
@@ -310,11 +296,9 @@ export default function MainAttendanceApp({ user, onLogout }) {
                     </Heading>
                     <Stack spacing={1} mb={4}>
                       {rows.map((r, i) => {
-                        const name =
-                          teams.find((t) => t.id == r.teamId)?.name || 'Team'
+                        const name = teams.find((t) => t.id == r.teamId)?.name || 'Team'
                         const typeName =
-                          types[r.teamId]?.find((x) => x.id == r.typeId)
-                            ?.type_name || 'Type'
+                          types[r.teamId]?.find((x) => x.id == r.typeId)?.type_name || 'Type'
                         return (
                           <Text key={i}>
                             {name} – {typeName} – {r.count} nos

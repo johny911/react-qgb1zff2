@@ -106,7 +106,7 @@ export default function AdminDashboard({ user, onLogout }) {
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: 20, maxWidth: '100vw', overflowX: 'hidden' }}>
       <div style={{ maxWidth: 600, margin: '0 auto' }}>
         <h2>Admin Dashboard</h2>
         <p>Logged in as: {user.email}</p>
@@ -130,12 +130,14 @@ export default function AdminDashboard({ user, onLogout }) {
               />
               <button onClick={addProject}>Add</button>
             </div>
-            <ul>
+            <ul style={{ paddingLeft: 0, listStyleType: 'none' }}>
               {projects.map((p) => (
-                <li key={p.id}>
-                  {p.name}
-                  <button onClick={() => updateProject(p.id, p.name)}>✏️</button>
-                  <button onClick={() => deleteProject(p.id)}>🗑️</button>
+                <li key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                  <span>{p.name}</span>
+                  <div>
+                    <button onClick={() => updateProject(p.id, p.name)}>✏️</button>
+                    <button onClick={() => deleteProject(p.id)}>🗑️</button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -154,12 +156,14 @@ export default function AdminDashboard({ user, onLogout }) {
               />
               <button onClick={addTeam}>Add</button>
             </div>
-            <ul>
+            <ul style={{ paddingLeft: 0, listStyleType: 'none' }}>
               {teams.map((t) => (
-                <li key={t.id}>
-                  {t.name}
-                  <button onClick={() => updateTeam(t.id, t.name)}>✏️</button>
-                  <button onClick={() => deleteTeam(t.id)}>🗑️</button>
+                <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                  <span>{t.name}</span>
+                  <div>
+                    <button onClick={() => updateTeam(t.id, t.name)}>✏️</button>
+                    <button onClick={() => deleteTeam(t.id)}>🗑️</button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -184,12 +188,14 @@ export default function AdminDashboard({ user, onLogout }) {
               />
               <button onClick={addType}>Add</button>
             </div>
-            <ul>
+            <ul style={{ paddingLeft: 0, listStyleType: 'none' }}>
               {types.map((t) => (
-                <li key={t.id}>
-                  {t.type_name} (Team ID: {t.team_id})
-                  <button onClick={() => updateType(t.id, t.type_name)}>✏️</button>
-                  <button onClick={() => deleteType(t.id)}>🗑️</button>
+                <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                  <span>{t.type_name} (Team ID: {t.team_id})</span>
+                  <div>
+                    <button onClick={() => updateType(t.id, t.type_name)}>✏️</button>
+                    <button onClick={() => deleteType(t.id)}>🗑️</button>
+                  </div>
                 </li>
               ))}
             </ul>

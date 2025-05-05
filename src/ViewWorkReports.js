@@ -10,6 +10,8 @@ import {
   Flex
 } from '@chakra-ui/react'
 import { supabase } from './supabaseClient'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function ViewWorkReports({ onBack }) {
   const [projectId, setProjectId] = useState('')
@@ -39,6 +41,33 @@ export default function ViewWorkReports({ onBack }) {
       .order('allotment_id', { ascending: true })
     if (error) return alert(error.message)
     setRows(data || [])
+  }
+
+  const generatePDF = () => {
+    const doc = new jsPDF()
+    doc.setFontSize(16)
+    const projectName = projects.find(p => p.id === parseInt(projectId))?.name || 'N/A'
+    doc.text(`Work Done Report`, 14, 18)
+    doc.setFontSize(12)
+    doc.text(`Project: ${projectName}`, 14, 26)
+    doc.text(`Date: ${date}`, 14, 32)
+
+    const tableData = rows.map((r, i) => [
+      i + 1,
+      r.work_description,
+      `${r.quantity} ${r.uom}`,
+      r.team_name,
+      r.labour_type_name,
+      `${r.count} nos`
+    ])
+
+    autoTable(doc, {
+      startY: 38,
+      head: [['#', 'Work', 'Qty/UOM', 'Team', 'Type', 'Count']],
+      body: tableData
+    })
+
+    doc.save(`work_done_${projectName}_${date}.pdf`)
   }
 
   return (
@@ -77,27 +106,32 @@ export default function ViewWorkReports({ onBack }) {
       {rows.length === 0 ? (
         <Text>No allocations found.</Text>
       ) : (
-        <Stack spacing={4}>
-          {rows.map((r) => (
-            <Box
-              key={`${r.allotment_id}-${r.labour_id}`}
-              p={4}
-              borderWidth={1}
-              borderRadius="md"
-              bg="gray.50"
-            >
-              <Text fontWeight="bold">
-                {r.work_description}
-              </Text>
-              <Text>
-                — {r.quantity} {r.uom}
-              </Text>
-              <Text mt={2} pl={4}>
-                {r.team_name} / {r.labour_type_name}: {r.count} nos
-              </Text>
-            </Box>
-          ))}
-        </Stack>
+        <>
+          <Button mb={4} colorScheme="green" onClick={generatePDF}>
+            Download as PDF
+          </Button>
+          <Stack spacing={4}>
+            {rows.map((r) => (
+              <Box
+                key={`${r.allotment_id}-${r.labour_id}`}
+                p={4}
+                borderWidth={1}
+                borderRadius="md"
+                bg="gray.50"
+              >
+                <Text fontWeight="bold">
+                  {r.work_description}
+                </Text>
+                <Text>
+                  — {r.quantity} {r.uom}
+                </Text>
+                <Text mt={2} pl={4}>
+                  {r.team_name} / {r.labour_type_name}: {r.count} nos
+                </Text>
+              </Box>
+            ))}
+          </Stack>
+        </>
       )}
     </Box>
   )

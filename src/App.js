@@ -7,8 +7,8 @@ import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
 
 export default function App() {
-  const [user, setUser]     = useState(null);
-  const [role, setRole]     = useState(null);
+  const [user, setUser]       = useState(null);
+  const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,9 +32,8 @@ export default function App() {
       (_event, session) => {
         const currentUser = session?.user || null;
         setUser(currentUser);
-        if (currentUser) {
-          fetchUserRole(currentUser.id);
-        } else {
+        if (currentUser) fetchUserRole(currentUser.id);
+        else {
           setRole(null);
           setLoading(false);
         }
@@ -68,18 +67,17 @@ export default function App() {
 
   if (loading) {
     return (
-      <Flex align="center" justify="center" minH="100vh">
+      <Flex align="center" justify="center" minH="100vh" bg="background">
         <Spinner size="lg" />
       </Flex>
     );
   }
 
-  // If not signed in, show login
   if (!user) {
     return <Login setUser={setUser} />;
   }
 
-  // App Shell wrapper
+  // AppShell wrapper
   const AppShell = ({ children }) => (
     <Box minH="100vh" bg="background">
       <Flex
@@ -102,7 +100,6 @@ export default function App() {
     </Box>
   );
 
-  // Route based on role
   if (role === 'admin') {
     return (
       <AppShell>
@@ -119,7 +116,6 @@ export default function App() {
     );
   }
 
-  // Fallback
   return (
     <Flex align="center" justify="center" p={8}>
       <Text>Access denied.</Text>

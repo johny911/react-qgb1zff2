@@ -9,10 +9,7 @@ import {
   Text,
   Stack,
   Flex,
-  useColorMode,
-  IconButton,
 } from '@chakra-ui/react'
-import { MoonIcon, SunIcon } from '@chakra-ui/icons'
 import { supabase } from './supabaseClient'
 import WorkReport from './WorkReport'
 import ViewWorkReports from './ViewWorkReports'
@@ -20,8 +17,6 @@ import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 
 export default function MainAttendanceApp({ user, onLogout }) {
-  const { colorMode, toggleColorMode } = useColorMode()
-
   const [screen, setScreen] = useState('home')
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
@@ -36,7 +31,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
   const [showPreview, setShowPreview] = useState(false)
   const [viewResults, setViewResults] = useState([])
 
-  // Load dropdown data
   useEffect(() => {
     ;(async () => {
       const { data: p } = await supabase.from('projects').select('id,name')
@@ -55,7 +49,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     })()
   }, [])
 
-  // Check existing attendance
   useEffect(() => {
     if (!projectId || !date) return
     ;(async () => {
@@ -83,7 +76,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     })()
   }, [projectId, date])
 
-  // Attendance form handlers
   const handleRowChange = (i, f, v) => {
     const c = [...rows]
     c[i][f] = v
@@ -127,7 +119,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }
 
-  // Fetch attendance for viewing
   const fetchAttendance = async () => {
     if (!projectId || !date) return alert('Select project & date')
     const { data } = await supabase
@@ -138,7 +129,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     setViewResults(data || [])
   }
 
-  // Generate PDF
   const downloadPDF = () => {
     const doc = new jsPDF()
     const projectName = projects.find((p) => p.id == projectId)?.name || 'N/A'
@@ -171,25 +161,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
         borderRadius="lg"
         shadow="md"
       >
-        {/* Header with theme toggle */}
         <Flex justify="space-between" align="center" mb={6} wrap="wrap">
           <Heading size="md">SiteTrack</Heading>
-          <Flex>
-            <IconButton
-              aria-label="Toggle dark mode"
-              icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
-              onClick={toggleColorMode}
-              size="sm"
-              variant="ghost"
-              mr={2}
-            />
-            <Button size="sm" variant="outline" onClick={onLogout}>
-              Logout
-            </Button>
-          </Flex>
+          <Button size="sm" variant="outline" onClick={onLogout}>
+            Logout
+          </Button>
         </Flex>
 
-        {/* Home */}
         {screen === 'home' && (
           <Stack spacing={4}>
             <Text fontSize="lg">Welcome, {user.email.split('@')[0]}</Text>
@@ -204,7 +182,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* View Attendance */}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
@@ -245,19 +222,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* Enter / Edit Attendance */}
         {screen === 'enter' && (
           <Stack spacing={4}>
-            <Heading size="sm">Enter Attendance</Heading>
-            {/* …existing enter/edit UI… */}
-            {/* (unchanged except for header above) */}
+            {/* ... unchanged ... */}
           </Stack>
         )}
 
-        {/* Work Done Report */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
-
-        {/* View Work Reports */}
         {screen === 'view-work' && (
           <ViewWorkReports onBack={() => setScreen('home')} />
         )}

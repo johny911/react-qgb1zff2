@@ -1,15 +1,17 @@
+// src/index.js
 import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChakraProvider } from '@chakra-ui/react';
-
 import App from './App';
+import theme from './theme';  // 🔹 import your custom theme
 
 const rootElement = document.getElementById('root');
 const root = createRoot(rootElement);
 
 root.render(
   <StrictMode>
-    <ChakraProvider>
+    {/* 🔹 apply the theme here */}
+    <ChakraProvider theme={theme}>
       <App />
     </ChakraProvider>
   </StrictMode>

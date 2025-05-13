@@ -293,13 +293,16 @@ export default function WorkReport({ onBack }) {
               )
             })}
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => addLabour(wIdx)}
-            >
-              + Add Labour
-            </Button>
+            {/* wrapped +Add Labour in its own Box to avoid overlap */}
+            <Box textAlign="right" mt={2}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => addLabour(wIdx)}
+              >
+                + Add Labour
+              </Button>
+            </Box>
           </Box>
         ))}
 

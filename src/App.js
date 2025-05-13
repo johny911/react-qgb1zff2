@@ -1,7 +1,17 @@
 // src/App.js
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { Box, Flex, Heading, Button, Spinner, Text } from '@chakra-ui/react';
+import {
+  Box,
+  Flex,
+  Heading,
+  Button,
+  Spinner,
+  Text,
+  useColorMode,
+  IconButton,
+} from '@chakra-ui/react';
+import { SunIcon, MoonIcon } from '@chakra-ui/icons';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
@@ -10,6 +20,7 @@ export default function App() {
   const [user, setUser]     = useState(null);
   const [role, setRole]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const { colorMode, toggleColorMode } = useColorMode();
 
   useEffect(() => {
     const getSessionAndUser = async () => {
@@ -74,12 +85,10 @@ export default function App() {
     );
   }
 
-  // Not signed in?
   if (!user) {
     return <Login setUser={setUser} />;
   }
 
-  // App Shell wrapper
   const AppShell = ({ children }) => (
     <Box minH="100vh" bg="background">
       <Flex
@@ -92,9 +101,17 @@ export default function App() {
         justify="space-between"
       >
         <Heading size="md">SiteTrack</Heading>
-        <Button variant="outline" colorScheme="whiteAlpha" onClick={handleLogout}>
-          Logout
-        </Button>
+        <Flex align="center" gap={2}>
+          <IconButton
+            aria-label="Toggle color mode"
+            icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
+            size="sm"
+            onClick={toggleColorMode}
+          />
+          <Button variant="outline" colorScheme="whiteAlpha" onClick={handleLogout}>
+            Logout
+          </Button>
+        </Flex>
       </Flex>
       <Box as="main" p={4}>
         {children}
@@ -102,7 +119,6 @@ export default function App() {
     </Box>
   );
 
-  // Route based on role
   if (role === 'admin') {
     return (
       <AppShell>

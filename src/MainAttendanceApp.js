@@ -222,9 +222,126 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* Rest of the screens remain unchanged */}
         {screen === 'enter' && (
           <Stack spacing={4}>
-            {/* ... unchanged ... */}
+            <Heading size="sm">Enter Attendance</Heading>
+            <Select
+              placeholder="Select Project"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              isDisabled={!editMode}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              isDisabled={!editMode}
+            />
+            {attendanceMarked && !editMode && (
+              <Flex align="center">
+                <Text color="green.500">✅ Attendance already marked</Text>
+                <Button size="sm" ml={4} onClick={() => setEditMode(true)}>
+                  ✏️ Edit
+                </Button>
+              </Flex>
+            )}
+            {rows.map((r, i) => (
+              <Box key={i} bg="gray.100" p={4} borderRadius="md">
+                <Flex justify="flex-end" mb={2}>
+                  <Button
+                    size="xs"
+                    colorScheme="red"
+                    onClick={() => deleteRow(i)}
+                    visibility={editMode ? 'visible' : 'hidden'}
+                  >
+                    ×
+                  </Button>
+                </Flex>
+                <Stack spacing={2}>
+                  <Select
+                    placeholder="Team"
+                    value={r.teamId}
+                    onChange={(e) =>
+                      handleRowChange(i, 'teamId', e.target.value)
+                    }
+                    isDisabled={!editMode}
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    placeholder="Type"
+                    value={r.typeId}
+                    onChange={(e) =>
+                      handleRowChange(i, 'typeId', e.target.value)
+                    }
+                    isDisabled={!editMode || !r.teamId}
+                  >
+                    {(types[r.teamId] || []).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.type_name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    placeholder="No. of Batches"
+                    type="number"
+                    value={r.count}
+                    onChange={(e) =>
+                      handleRowChange(i, 'count', e.target.value)
+                    }
+                    isDisabled={!editMode}
+                  />
+                </Stack>
+              </Box>
+            ))}
+            {editMode && (
+              <>
+                <Button colorScheme="blue" onClick={addRow}>
+                  + Add Team
+                </Button>
+                <Button onClick={() => setShowPreview(true)}>
+                  Preview Summary
+                </Button>
+                {showPreview && (
+                  <Box pt={4}>
+                    <Heading size="xs" mb={2}>
+                      Summary
+                    </Heading>
+                    <Stack spacing={1} mb={4}>
+                      {rows.map((r, i) => {
+                        const name =
+                          teams.find((t) => t.id == r.teamId)?.name || 'Team'
+                        const typeName =
+                          types[r.teamId]?.find((x) => x.id == r.typeId)
+                            ?.type_name || 'Type'
+                        return (
+                          <Text key={i}>
+                            {name} – {typeName} – {r.count} nos
+                          </Text>
+                        )
+                      })}
+                    </Stack>
+                    <Button colorScheme="green" onClick={handleSubmit}>
+                      ✅ Save Attendance
+                    </Button>
+                  </Box>
+                )}
+              </>
+            )}
+            <Button variant="outline" onClick={() => setScreen('home')}>
+              ← Back
+            </Button>
           </Stack>
         )}
 

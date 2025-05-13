@@ -74,7 +74,7 @@ export default function App() {
     );
   }
 
-  // Not signed in?
+  // If not signed in, show login
   if (!user) {
     return <Login setUser={setUser} />;
   }
@@ -119,6 +119,7 @@ export default function App() {
     );
   }
 
+  // Fallback
   return (
     <Flex align="center" justify="center" p={8}>
       <Text>Access denied.</Text>

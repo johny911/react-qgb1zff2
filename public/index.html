@@ -6,11 +6,17 @@
     <!-- Ensure responsive on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- App description -->
+    <!-- App name & description -->
+    <title>SiteTrack</title>
+    <meta name="application-name" content="SiteTrack" />
     <meta name="description" content="SiteTrack - Labour Attendance App" />
 
-    <!-- PWA theme color (address bar & splash) -->
+    <!-- PWA theme & status bar -->
     <meta name="theme-color" content="#1976d2" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SiteTrack" />
 
     <!-- Load Inter font from Google Fonts -->
     <link
@@ -21,7 +27,10 @@
     <!-- Link to the Web App Manifest -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- App icons from Supabase Storage -->
+    <!-- Fallback favicon -->
+    <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
+
+    <!-- Supabase-hosted icons -->
     <link
       rel="icon"
       href="https://hftkpcltkuewskmtkmbq.supabase.co/storage/v1/object/public/labourattendanceapp/app_icon/favicon-192.png"
@@ -38,10 +47,8 @@
       rel="apple-touch-icon"
       href="https://hftkpcltkuewskmtkmbq.supabase.co/storage/v1/object/public/labourattendanceapp/app_icon/favicon-192.png"
     />
-
-    <title>SiteTrack</title>
   </head>
-  <body style="margin:0;padding:0;font-family:Inter,system-ui,sans-serif;">
+  <body style="margin:0; padding:0; font-family:Inter, system-ui, sans-serif;">
     <div id="root"></div>
   </body>
 </html>

@@ -91,7 +91,7 @@ export default function App() {
       >
         <Heading size="md">SiteTrack</Heading>
         <Button variant="outline" colorScheme="whiteAlpha" onClick={handleLogout}>
-          Logout
+          Logou
         </Button>
       </Flex>
       <Box as="main" p={4}>

@@ -1,7 +1,7 @@
 // src/App.js
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { Box, Flex, Heading, Button, Spinner, Text } from '@chakra-ui/react';
+import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
@@ -16,7 +16,7 @@ export default function App() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const currentUser = session?.user;
+      const currentUser = session?.user || null;
       setUser(currentUser);
 
       if (currentUser) {
@@ -54,7 +54,7 @@ export default function App() {
       console.error('Error fetching role:', error.message);
       setRole(null);
     } else {
-      setRole(data?.role);
+      setRole(data?.role || null);
     }
     setLoading(false);
   };
@@ -77,24 +77,16 @@ export default function App() {
     return <Login setUser={setUser} />;
   }
 
-  // AppShell wrapper
+  // Minimal shell (no header, no nav) — Apple-style canvas
   const AppShell = ({ children }) => (
-    <Box minH="100vh" bg="background">
-      <Flex
-        as="header"
-        bg="brand.700"
-        color="white"
-        px={4}
-        py={3}
-        align="center"
-        justify="space-between"
-      >
-        <Heading size="md">SiteTrack</Heading>
-        <Button variant="outline" colorScheme="whiteAlpha" onClick={handleLogout}>
-          Logou
-        </Button>
-      </Flex>
-      <Box as="main" p={4}>
+    <Box
+      minH="100vh"
+      bg="background"
+      px={{ base: 4, md: 6 }}
+      py={{ base: 6, md: 10 }}
+      pb={`calc(env(safe-area-inset-bottom) + 24px)`}
+    >
+      <Box maxW="560px" mx="auto">
         {children}
       </Box>
     </Box>

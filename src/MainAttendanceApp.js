@@ -84,8 +84,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
       setShowPreview(false)
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, date]) // (setRows comes from persisted hook; safe)
+  }, [projectId, date, setRows])
 
   // ---- Extra safety: flush state on background/unload ----
   useEffect(() => {

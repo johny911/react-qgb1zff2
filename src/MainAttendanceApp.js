@@ -16,7 +16,35 @@ import WorkReport from './WorkReport'
 import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
-import usePersistedState from './hooks/usePersistedState' // ✅ persist UI state
+import usePersistedState from './hooks/usePersistedState'
+import { BUILD_INFO } from './buildInfo' // { message, sha, branch, time }
+
+// Small build/version tag in bottom-right corner
+function BuildTag() {
+  const msg = BUILD_INFO?.message || 'local build'
+  const sha = (BUILD_INFO?.sha || 'dev').slice(0, 7)
+  return (
+    <Box
+      position="fixed"
+      bottom="8px"
+      right="12px"
+      fontSize="11px"
+      color="gray.500"
+      bg="white"
+      border="1px solid"
+      borderColor="gray.200"
+      px="2"
+      py="0.5"
+      borderRadius="md"
+      shadow="sm"
+      opacity={0.9}
+      pointerEvents="none"
+      zIndex={1000}
+    >
+      {msg} ({sha})
+    </Box>
+  )
+}
 
 export default function MainAttendanceApp({ user, onLogout }) {
   // ---- Persisted UI state (survives tab kills / PWA background) ----
@@ -31,7 +59,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
   const rowsKey = `att:rows:${userKey}:${projectId || 'no-project'}:${date || 'no-date'}`
   const [rows, setRows] = usePersistedState(rowsKey, [{ teamId: '', typeId: '', count: '' }])
 
-  // ---- Server data / derived state (same as before) ----
+  // ---- Server data / derived state ----
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
@@ -109,7 +137,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }, [rowsKey, rows, screen, projectId, date, userKey])
 
-  // ---- Handlers (unchanged) ----
+  // ---- Handlers ----
   const handleRowChange = (i, f, v) => {
     const c = [...rows]
     c[i][f] = v
@@ -403,6 +431,9 @@ export default function MainAttendanceApp({ user, onLogout }) {
           <ViewWorkReports onBack={() => setScreen('home')} />
         )}
       </Box>
+
+      {/* Build/version tag */}
+      <BuildTag />
     </Box>
   )
 }

@@ -17,19 +17,18 @@ import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
-import { BUILD_INFO } from './buildInfo' // { message, sha, branch, time }
+import { BUILD_VERSION } from './version' // -> shows "build <shortsha>"
 
 // Small build/version tag in bottom-right corner
 function BuildTag() {
-  const msg = BUILD_INFO?.message || 'local build'
-  const sha = (BUILD_INFO?.sha || 'dev').slice(0, 7)
+  const label = BUILD_VERSION || 'build dev'
   return (
     <Box
       position="fixed"
       bottom="8px"
       right="12px"
       fontSize="11px"
-      color="gray.500"
+      color="gray.600"
       bg="white"
       border="1px solid"
       borderColor="gray.200"
@@ -37,11 +36,11 @@ function BuildTag() {
       py="0.5"
       borderRadius="md"
       shadow="sm"
-      opacity={0.9}
+      opacity={0.95}
       pointerEvents="none"
       zIndex={1000}
     >
-      {msg} ({sha})
+      {label}
     </Box>
   )
 }

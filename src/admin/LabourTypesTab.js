@@ -1,3 +1,4 @@
+// src/admin/LabourTypesTab.js
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   Box, HStack, Input, IconButton, Button, Stack, Text, Select, Badge
@@ -12,9 +13,7 @@ export default function LabourTypesTab() {
   const [newType, setNewType] = useState('');
 
   const teamById = useMemo(() => {
-    const m = {};
-    teams.forEach(t => { m[t.id] = t; });
-    return m;
+    const m = {}; teams.forEach(t => { m[t.id] = t; }); return m;
   }, [teams]);
 
   const refresh = async () => {
@@ -22,16 +21,14 @@ export default function LabourTypesTab() {
       supabase.from('labour_teams').select('*').order('name', { ascending: true }),
       supabase.from('labour_types').select('*').order('type_name', { ascending: true }),
     ]);
-    setTeams(t || []);
-    setTypes(ty || []);
+    setTeams(t || []); setTypes(ty || []);
   };
   useEffect(() => { refresh(); }, []);
 
   const addType = async () => {
     if (!newTeamId || !newType.trim()) return;
     await supabase.from('labour_types').insert({ team_id: newTeamId, type_name: newType.trim() });
-    setNewType('');
-    refresh();
+    setNewType(''); refresh();
   };
   const editType = async (row) => {
     const name = prompt('Edit labour type name:', row.type_name);
@@ -49,27 +46,53 @@ export default function LabourTypesTab() {
 
   return (
     <Stack spacing={4} w="100%">
-      <HStack w="100%" spacing={3} align="stretch">
+      {/* Controls row that WRAPS and never overflows */}
+      <HStack
+        w="100%"
+        spacing={3}
+        align="stretch"
+        flexWrap="wrap"
+      >
         <Select
           placeholder="Select team"
           value={newTeamId}
           onChange={(e) => setNewTeamId(e.target.value)}
-          flex="0 0 45%"
-          minW={0}
+          flex={{ base: '1 1 100%', sm: '1 1 45%' }}
+          minW="180px"
+          minH="42px"
         >
           {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </Select>
+
         <Input
           placeholder="New labour type"
           value={newType}
           onChange={(e) => setNewType(e.target.value)}
-          flex="1"
-          minW={0}
+          flex={{ base: '1 1 100%', sm: '1 1 45%' }}
+          minW="180px"
+          minH="42px"
         />
-        <Button onClick={addType} leftIcon={<FiPlus />} flexShrink={0}>Add</Button>
-        <IconButton aria-label="Refresh" icon={<FiRefreshCcw />} onClick={refresh} variant="outline" flexShrink={0} />
+
+        <Button
+          onClick={addType}
+          leftIcon={<FiPlus />}
+          flex="0 0 auto"
+          minH="42px"
+        >
+          Add
+        </Button>
+
+        <IconButton
+          aria-label="Refresh"
+          icon={<FiRefreshCcw />}
+          onClick={refresh}
+          variant="outline"
+          flex="0 0 auto"
+          minH="42px"
+        />
       </HStack>
 
+      {/* List */}
       <Stack spacing={3}>
         {types.map((row) => (
           <HStack
@@ -84,7 +107,9 @@ export default function LabourTypesTab() {
             align="center"
           >
             <Box flex="1" minW={0}>
-              <Badge colorScheme="gray" mb={1}>{teamById[row.team_id]?.name || 'Team'}</Badge>
+              <Badge colorScheme="gray" mb={1} whiteSpace="nowrap">
+                {teamById[row.team_id]?.name || 'Team'}
+              </Badge>
               <Text noOfLines={2} fontWeight="semibold">{row.type_name}</Text>
             </Box>
             <HStack spacing={2} flexShrink={0}>

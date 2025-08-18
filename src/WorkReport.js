@@ -44,6 +44,10 @@ export default function WorkReport({ onBack }) {
   // Remaining map after allotments deducted
   const [remainingMap, setRemainingMap] = useState({});
 
+  // Existing report (if any) for (project, date)
+  const [existingReportId, setExistingReportId] = useState(null);
+  const isEditing = !!existingReportId;
+
   // Load static data
   useEffect(() => {
     (async () => {
@@ -63,28 +67,105 @@ export default function WorkReport({ onBack }) {
     })();
   }, []);
 
-  // Load attendance for selected project/date
+  // Load attendance for selected project/date AND detect/load existing report
   useEffect(() => {
-    if (!selectedProject || !date) return;
+    if (!selectedProject || !date) {
+      setExistingReportId(null);
+      return;
+    }
     (async () => {
-      const { data } = await supabase
+      // 1) Attendance for remaining calculations
+      const { data: att } = await supabase
         .from('attendance')
         .select('*')
         .eq('project_id', selectedProject)
         .eq('date', date);
 
       const attendance = {};
-      (data || []).forEach((row) => {
+      (att || []).forEach((row) => {
         const key = `${row.team_id}-${row.labour_type_id}`;
         attendance[key] = (attendance[key] || 0) + row.count;
       });
       setAttendanceMap(attendance);
-      setRemainingMap({ ...attendance });
+
+      // 2) Check if a work_report exists for (project, date)
+      const { data: existing, error } = await supabase
+        .from('work_reports')
+        .select('id')
+        .eq('project_id', selectedProject)
+        .eq('date', date)
+        .maybeSingle();
+
+      if (error) {
+        console.error('work_reports lookup error:', error.message);
+        setExistingReportId(null);
+        // Keep the form for new
+        setRemainingMap({ ...attendance });
+        return;
+      }
+
+      if (existing?.id) {
+        setExistingReportId(existing.id);
+
+        // Load existing works + labours
+        // Fetch all work_allotments for the report
+        const { data: allotments } = await supabase
+          .from('work_allotments')
+          .select('id, work_description, quantity, uom')
+          .eq('report_id', existing.id)
+          .order('id', { ascending: true });
+
+        // For each allotment, fetch labours
+        const hydrated = [];
+        for (const wa of allotments || []) {
+          const { data: labours } = await supabase
+            .from('work_report_labours')
+            .select('team_id, labour_type_id, count')
+            .eq('work_allotment_id', wa.id)
+            .order('id', { ascending: true });
+
+          hydrated.push({
+            description: wa.work_description || '',
+            quantity: String(wa.quantity ?? ''),
+            uom: wa.uom || '',
+            labourAllotments: (labours || []).map((l) => ({
+              teamId: String(l.team_id || ''),
+              typeId: String(l.labour_type_id || ''),
+              count: String(l.count || ''),
+            })),
+          });
+        }
+
+        // If no works present, keep one blank work
+        setWorks(hydrated.length ? hydrated : [
+          {
+            description: '',
+            quantity: '',
+            uom: '',
+            labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+          },
+        ]);
+
+        // Recompute remaining after loading existing (use current form values)
+        setTimeout(() => updateRemainingCounts(attendance), 0);
+      } else {
+        // No existing report ⇒ new mode
+        setExistingReportId(null);
+        setWorks([
+          {
+            description: '',
+            quantity: '',
+            uom: '',
+            labourAllotments: [{ teamId: '', typeId: '', count: '' }],
+          },
+        ]);
+        setRemainingMap({ ...attendance });
+      }
     })();
   }, [selectedProject, date]);
 
   // Recompute remaining after any allotment change
-  const updateRemainingCounts = () => {
+  const updateRemainingCounts = (base = attendanceMap) => {
     const used = {};
     works.forEach((w) =>
       w.labourAllotments.forEach((a) => {
@@ -94,8 +175,8 @@ export default function WorkReport({ onBack }) {
       })
     );
     const rem = {};
-    Object.keys(attendanceMap).forEach((key) => {
-      rem[key] = attendanceMap[key] - (used[key] || 0);
+    Object.keys(base).forEach((key) => {
+      rem[key] = base[key] - (used[key] || 0);
     });
     setRemainingMap(rem);
   };
@@ -168,27 +249,33 @@ export default function WorkReport({ onBack }) {
 
   const canSubmit = () => {
     if (!selectedProject || !date) return false;
-    // Ensure each work has minimal info
     for (const w of works) {
       if (!w.description || !w.quantity || !w.uom) return false;
       for (const a of w.labourAllotments) {
         if (!a.teamId || !a.typeId || !a.count || parseInt(a.count, 10) <= 0) return false;
       }
     }
-    // And ensure no negative remaining
     if (!allRemainingZero()) return false;
     return true;
   };
 
-  const handleSubmit = async () => {
-    if (!canSubmit()) {
+  // Create new report
+  const createReport = async () => {
+    const { data: existing } = await supabase
+      .from('work_reports')
+      .select('id')
+      .eq('project_id', selectedProject)
+      .eq('date', date)
+      .maybeSingle();
+
+    if (existing?.id) {
       toast({
-        title: 'Please complete all fields',
-        description: 'Fill all fields and allot all available labours (no remainder).',
-        status: 'warning',
-        duration: 2500,
-        isClosable: true,
+        title: 'Report already exists',
+        description: 'Loaded the existing report for editing.',
+        status: 'info',
+        duration: 2000,
       });
+      setExistingReportId(existing.id);
       return;
     }
 
@@ -203,16 +290,10 @@ export default function WorkReport({ onBack }) {
       .single();
 
     if (reportErr || !report) {
-      toast({
-        title: 'Error submitting report',
-        description: reportErr?.message || 'Unknown error',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-      return;
+      throw new Error(reportErr?.message || 'Create report failed');
     }
 
+    // Insert works + labours
     for (let work of works) {
       const { data: wa, error: waErr } = await supabase
         .from('work_allotments')
@@ -224,8 +305,7 @@ export default function WorkReport({ onBack }) {
         })
         .select()
         .single();
-
-      if (waErr || !wa) continue;
+      if (waErr || !wa) throw new Error(waErr?.message || 'Create allotment failed');
 
       const labourRows = work.labourAllotments.map((a) => ({
         work_allotment_id: wa.id,
@@ -233,15 +313,100 @@ export default function WorkReport({ onBack }) {
         labour_type_id: a.typeId,
         count: parseInt(a.count, 10),
       }));
-      await supabase.from('work_report_labours').insert(labourRows);
+      const { error: labErr } = await supabase.from('work_report_labours').insert(labourRows);
+      if (labErr) throw new Error(labErr.message || 'Create labours failed');
     }
 
-    toast({
-      title: '✅ Work report submitted!',
-      status: 'success',
-      duration: 1800,
-    });
-    onBack();
+    setExistingReportId(report.id);
+  };
+
+  // Update existing report: replace all allotments + labours
+  const updateReport = async () => {
+    if (!existingReportId) return;
+
+    // Optional: update top-level description
+    await supabase
+      .from('work_reports')
+      .update({ description: `Work Report for ${date}` })
+      .eq('id', existingReportId);
+
+    // Fetch all allotment ids
+    const { data: oldAllotments } = await supabase
+      .from('work_allotments')
+      .select('id')
+      .eq('report_id', existingReportId);
+
+    const allotmentIds = (oldAllotments || []).map((a) => a.id);
+
+    if (allotmentIds.length) {
+      // Delete children first
+      await supabase
+        .from('work_report_labours')
+        .delete()
+        .in('work_allotment_id', allotmentIds);
+
+      // Delete allotments
+      await supabase
+        .from('work_allotments')
+        .delete()
+        .eq('report_id', existingReportId);
+    }
+
+    // Re-create allotments + labours
+    for (let work of works) {
+      const { data: wa, error: waErr } = await supabase
+        .from('work_allotments')
+        .insert({
+          report_id: existingReportId,
+          work_description: work.description,
+          quantity: work.quantity,
+          uom: work.uom,
+        })
+        .select()
+        .single();
+      if (waErr || !wa) throw new Error(waErr?.message || 'Recreate allotment failed');
+
+      const labourRows = work.labourAllotments.map((a) => ({
+        work_allotment_id: wa.id,
+        team_id: a.teamId,
+        labour_type_id: a.typeId,
+        count: parseInt(a.count, 10),
+      }));
+      const { error: labErr } = await supabase.from('work_report_labours').insert(labourRows);
+      if (labErr) throw new Error(labErr.message || 'Recreate labours failed');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit()) {
+      toast({
+        title: 'Please complete all fields',
+        description: 'Fill all fields and allot all available labours (no remainder).',
+        status: 'warning',
+        duration: 2500,
+        isClosable: true,
+      });
+      return;
+    }
+
+    try {
+      if (isEditing) {
+        await updateReport();
+        toast({ title: 'Work report updated', status: 'success', duration: 1800 });
+      } else {
+        await createReport();
+        toast({ title: 'Work report submitted', status: 'success', duration: 1800 });
+      }
+      onBack();
+    } catch (e) {
+      toast({
+        title: isEditing ? 'Update failed' : 'Submit failed',
+        description: e.message || 'Unknown error',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -251,8 +416,8 @@ export default function WorkReport({ onBack }) {
       <Stack spacing={5}>
         <Flex align="center" justify="space-between">
           <Heading size="sm">Enter Work Report</Heading>
-          <Badge colorScheme="blue" variant="subtle">
-            {selectedProject ? 'Project selected' : 'No project'}
+          <Badge colorScheme={isEditing ? 'purple' : 'blue'} variant="subtle">
+            {isEditing ? 'Editing existing report' : 'New report'}
           </Badge>
         </Flex>
 
@@ -282,6 +447,12 @@ export default function WorkReport({ onBack }) {
                 onChange={(e) => setDate(e.target.value)}
               />
             </Box>
+
+            {isEditing && (
+              <Text fontSize="sm" color="green.600">
+                A report already exists for this project & date. You’re editing it.
+              </Text>
+            )}
           </Stack>
         </SectionCard>
 
@@ -453,7 +624,7 @@ export default function WorkReport({ onBack }) {
                 onClick={handleSubmit}
                 isDisabled={!canSubmit()}
               >
-                ✅ Submit Work Report
+                {isEditing ? '💾 Update Work Report' : '✅ Submit Work Report'}
               </Button>
               <Button
                 variant="outline"

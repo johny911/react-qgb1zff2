@@ -370,7 +370,7 @@ export default function AdminDashboard({ user, onLogout }) {
                   </Stack>
                 </TabPanel>
 
-                {/* LABOUR TYPES */}
+                {/* LABOUR TYPES. */}
                 <TabPanel>
                   <Stack spacing={4}>
                     <HStack align="flex-start">

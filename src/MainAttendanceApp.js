@@ -374,7 +374,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                     ))}
                   </Select>
                   <Input
-                    placeholder="No. of Batches"
+                    placeholder="No. of Shifts"
                     type="number"
                     value={r.count}
                     onChange={(e) =>

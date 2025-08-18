@@ -8,13 +8,14 @@ import {
   Icon,
   useColorModeValue,
 } from "@chakra-ui/react";
-import { FiCheckCircle, FiClipboard, FiHammer, FiEye } from "react-icons/fi";
+import { FiCheckCircle, FiClipboard, FiEye } from "react-icons/fi";
+import { FaHammer } from "react-icons/fa"; // ✅ fixed: hammer icon
 
 // Icon map for action buttons
 const icons = {
   enter: FiCheckCircle,
   view: FiClipboard,
-  work: FiHammer,
+  work: FaHammer,   // ✅ swapped FiHammer → FaHammer
   viewWork: FiEye,
 };
 

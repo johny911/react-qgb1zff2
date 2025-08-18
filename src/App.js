@@ -1,11 +1,13 @@
 // src/App.js
 import React, { useEffect, useState } from 'react';
-import { supabase } from './supabaseClient';
 import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
+import { supabase } from './supabaseClient';
+
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
-import UpdateBanner from './components/UpdateBanner'; // ✅ shows toast when new SW is available
+import BoardDashboard from './BoardDashboard';        // ✅ NEW: board view
+import UpdateBanner from './components/UpdateBanner'; // shows toast when new SW is available
 
 export default function App() {
   const [user, setUser]       = useState(null);
@@ -17,7 +19,6 @@ export default function App() {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user || null;
       setUser(currentUser);
-
       if (currentUser) {
         await fetchUserRole(currentUser.id);
       } else {
@@ -89,8 +90,6 @@ export default function App() {
       <Box maxW="560px" mx="auto">
         {children}
       </Box>
-
-      {/* Banner that appears only when a new SW version is available */}
       <UpdateBanner />
     </Box>
   );
@@ -111,9 +110,23 @@ export default function App() {
     );
   }
 
+  if (role === 'board') {
+    return (
+      <AppShell>
+        <BoardDashboard user={user} onLogout={handleLogout} />
+      </AppShell>
+    );
+  }
+
+  // Unknown role fallback
   return (
-    <Flex align="center" justify="center" p={8}>
-      <Text>Access denied.</Text>
+    <Flex align="center" justify="center" minH="100vh" bg="background" px={6}>
+      <Box textAlign="center">
+        <Text fontSize="lg" mb={2}>Access denied</Text>
+        <Text fontSize="sm" color="gray.600">
+          Your account doesn’t have a recognized role. Please contact an administrator.
+        </Text>
+      </Box>
     </Flex>
   );
 }

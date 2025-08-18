@@ -10,6 +10,14 @@ import {
   Text,
   Stack,
   Flex,
+  Divider,
+  Badge,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  useToast,
 } from '@chakra-ui/react'
 import { supabase } from './supabaseClient'
 import WorkReport from './WorkReport'
@@ -17,7 +25,7 @@ import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
-import { BUILD_VERSION } from './version' // now just the commit message (e.g., d5.71)
+import { BUILD_VERSION } from './version' // commit message only
 
 // Small build/version tag in bottom-right corner (message only)
 function BuildTag() {
@@ -46,6 +54,8 @@ function BuildTag() {
 }
 
 export default function MainAttendanceApp({ user, onLogout }) {
+  const toast = useToast()
+
   // ---- Persisted UI state (survives tab kills / PWA background) ----
   const userKey = user?.id || 'anon'
   const today = new Date().toISOString().split('T')[0]
@@ -136,24 +146,48 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }, [rowsKey, rows, screen, projectId, date, userKey])
 
+  // ---- Helpers ----
+  const totalCount = rows.reduce((sum, r) => sum + (parseInt(r.count || '0', 10) || 0), 0)
+
+  const isRowValid = (r) =>
+    r.teamId && r.typeId && r.count && !Number.isNaN(parseInt(r.count, 10)) && parseInt(r.count, 10) > 0
+
+  const canSave = () =>
+    projectId && date && rows.length > 0 && rows.every(isRowValid)
+
   // ---- Handlers ----
-  const handleRowChange = (i, f, v) => {
-    const c = [...rows]
-    c[i][f] = v
-    if (f === 'teamId') c[i].typeId = ''
-    setRows(c)
+  const handleRowChange = (i, field, value) => {
+    const copy = [...rows]
+    copy[i][field] = value
+    if (field === 'teamId') copy[i].typeId = ''
+    setRows(copy)
   }
-  const addRow = () =>
-    setRows([...rows, { teamId: '', typeId: '', count: '' }])
+
+  const handleRowCount = (i, value) => {
+    const val = value.replace(/[^\d]/g, '') // keep digits only
+    handleRowChange(i, 'count', val)
+  }
+
+  const addRow = () => setRows([...rows, { teamId: '', typeId: '', count: '' }])
+
   const deleteRow = (i) => {
-    const c = [...rows]
-    c.splice(i, 1)
-    setRows(c.length ? c : [{ teamId: '', typeId: '', count: '' }])
+    const copy = [...rows]
+    copy.splice(i, 1)
+    setRows(copy.length ? copy : [{ teamId: '', typeId: '', count: '' }])
   }
+
   const handleSubmit = async () => {
-    if (!projectId || !date || rows.some((r) => !r.teamId || !r.typeId || !r.count)) {
-      return alert('Please fill all fields')
+    if (!canSave()) {
+      toast({
+        title: 'Please complete all fields.',
+        description: 'Project, date, team, type, and a positive count are required.',
+        status: 'warning',
+        duration: 2500,
+        isClosable: true,
+      })
+      return
     }
+
     await supabase.from('attendance').delete().eq('project_id', projectId).eq('date', date)
     const payload = rows.map((r) => ({
       project_id: projectId,
@@ -163,9 +197,21 @@ export default function MainAttendanceApp({ user, onLogout }) {
       count: parseInt(r.count, 10),
     }))
     const { error } = await supabase.from('attendance').insert(payload)
-    if (error) alert('Error: ' + error.message)
-    else {
-      alert('✅ Attendance saved!')
+    if (error) {
+      toast({
+        title: 'Save failed',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    } else {
+      toast({
+        title: 'Attendance saved',
+        description: `${totalCount} entries saved for ${date}.`,
+        status: 'success',
+        duration: 2000,
+      })
       setAttendanceMarked(true)
       setEditMode(false)
       setShowPreview(false)
@@ -173,7 +219,14 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   const fetchAttendance = async () => {
-    if (!projectId || !date) return alert('Select project & date')
+    if (!projectId || !date) {
+      toast({
+        title: 'Select project & date',
+        status: 'info',
+        duration: 1500,
+      })
+      return
+    }
     const { data } = await supabase
       .from('attendance')
       .select('count, labour_teams(name), labour_types(type_name)')
@@ -215,7 +268,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         borderRadius="2xl"
         shadow="md"
       >
-        {/* HOME — clean card, no top title/logout row */}
+        {/* HOME */}
         {screen === 'home' && (
           <Stack spacing={5}>
             <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
@@ -255,7 +308,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 </ActionButton>
               </Stack>
 
-              {/* Optional: subtle logout at the bottom of the card */}
               <Button mt={6} size="sm" variant="outline" w="100%" onClick={onLogout}>
                 Logout
               </Button>
@@ -263,6 +315,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* VIEW (unchanged) */}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
@@ -303,135 +356,198 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* ENTER — redesigned */}
         {screen === 'enter' && (
-          <Stack spacing={4}>
-            <Heading size="sm">Enter Attendance</Heading>
-            <Select
-              placeholder="Select Project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              isDisabled={!editMode}
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              isDisabled={!editMode}
-            />
-            {attendanceMarked && !editMode && (
-              <Flex align="center">
-                <Text color="green.500">✅ Attendance already marked</Text>
-                <Button size="sm" ml={4} onClick={() => setEditMode(true)}>
-                  ✏️ Edit
-                </Button>
-              </Flex>
-            )}
-            {rows.map((r, i) => (
-              <Box key={i} bg="gray.100" p={4} borderRadius="md">
-                <Flex justify="flex-end" mb={2}>
-                  <Button
-                    size="xs"
-                    colorScheme="red"
-                    onClick={() => deleteRow(i)}
-                    visibility={editMode ? 'visible' : 'hidden'}
-                  >
-                    ×
-                  </Button>
-                </Flex>
-                <Stack spacing={2}>
+          <Stack spacing={5}>
+            <Flex align="center" justify="space-between">
+              <Heading size="sm">Enter Attendance</Heading>
+              {attendanceMarked && !editMode ? (
+                <Badge colorScheme="green" variant="subtle">Saved</Badge>
+              ) : (
+                <Badge colorScheme="yellow" variant="subtle">Draft</Badge>
+              )}
+            </Flex>
+
+            {/* Details card */}
+            <SectionCard title="Details" subtitle="Select project and date.">
+              <Stack spacing={3}>
+                <Box>
+                  <Text fontSize="sm" color="textMuted" mb={1}>Project</Text>
                   <Select
-                    placeholder="Team"
-                    value={r.teamId}
-                    onChange={(e) =>
-                      handleRowChange(i, 'teamId', e.target.value)
-                    }
+                    placeholder="Select Project"
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
                     isDisabled={!editMode}
                   >
-                    {teams.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
                       </option>
                     ))}
                   </Select>
-                  <Select
-                    placeholder="Type"
-                    value={r.typeId}
-                    onChange={(e) =>
-                      handleRowChange(i, 'typeId', e.target.value)
-                    }
-                    isDisabled={!editMode || !r.teamId}
-                  >
-                    {(types[r.teamId] || []).map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.type_name}
-                      </option>
-                    ))}
-                  </Select>
+                </Box>
+
+                <Box>
+                  <Text fontSize="sm" color="textMuted" mb={1}>Date</Text>
                   <Input
-                    placeholder="No. of Shifts"
-                    type="number"
-                    value={r.count}
-                    onChange={(e) =>
-                      handleRowChange(i, 'count', e.target.value)
-                    }
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
                     isDisabled={!editMode}
                   />
-                </Stack>
-              </Box>
-            ))}
-            {editMode && (
-              <>
-                <Button colorScheme="blue" onClick={addRow}>
-                  + Add Team
-                </Button>
-                <Button onClick={() => setShowPreview(true)}>
-                  Preview Summary
-                </Button>
-                {showPreview && (
-                  <Box pt={4}>
-                    <Heading size="xs" mb={2}>
-                      Summary
-                    </Heading>
-                    <Stack spacing={1} mb={4}>
-                      {rows.map((r, i) => {
-                        const name =
-                          teams.find((t) => t.id == r.teamId)?.name || 'Team'
-                        const typeName =
-                          (types[r.teamId] || []).find((x) => x.id == r.typeId)
-                            ?.type_name || 'Type'
-                        return (
-                          <Text key={i}>
-                            {name} – {typeName} – {r.count} nos
-                          </Text>
-                        )
-                      })}
-                    </Stack>
-                    <Button colorScheme="green" onClick={handleSubmit}>
-                      ✅ Save Attendance
+                </Box>
+
+                {attendanceMarked && !editMode && (
+                  <Flex align="center" justify="space-between" pt={1}>
+                    <Text color="green.600" fontSize="sm">✅ Attendance already marked</Text>
+                    <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
+                      Edit
                     </Button>
-                  </Box>
+                  </Flex>
                 )}
-              </>
-            )}
-            <Button variant="outline" onClick={() => setScreen('home')}>
-              ← Back
-            </Button>
+              </Stack>
+            </SectionCard>
+
+            {/* Rows card */}
+            <SectionCard
+              title="Entries"
+              subtitle="Add team, type and count for today."
+            >
+              <Stack spacing={3}>
+                {rows.map((r, i) => (
+                  <Box key={i} bg="gray.50" p={3} borderRadius="md" border="1px solid" borderColor="gray.200">
+                    <Stack spacing={2}>
+                      <Box>
+                        <Text fontSize="sm" color="textMuted" mb={1}>Team</Text>
+                        <Select
+                          placeholder="Select Team"
+                          value={r.teamId}
+                          onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
+                          isDisabled={!editMode}
+                        >
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Box>
+
+                      <Box>
+                        <Text fontSize="sm" color="textMuted" mb={1}>Type</Text>
+                        <Select
+                          placeholder={r.teamId ? 'Select Type' : 'Select team first'}
+                          value={r.typeId}
+                          onChange={(e) => handleRowChange(i, 'typeId', e.target.value)}
+                          isDisabled={!editMode || !r.teamId}
+                        >
+                          {(types[r.teamId] || []).map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.type_name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Box>
+
+                      <Box>
+                        <Text fontSize="sm" color="textMuted" mb={1}>Count</Text>
+                        <NumberInput
+                          min={1}
+                          value={r.count}
+                          onChange={(_, val) => handleRowCount(i, String(val ?? ''))}
+                          isDisabled={!editMode}
+                        >
+                          <NumberInputField placeholder="Enter count" />
+                          <NumberInputStepper>
+                            <NumberIncrementStepper />
+                            <NumberDecrementStepper />
+                          </NumberInputStepper>
+                        </NumberInput>
+                      </Box>
+
+                      {!isRowValid(r) && (
+                        <Text fontSize="xs" color="red.500">
+                          Complete team, type and a positive count.
+                        </Text>
+                      )}
+
+                      <Flex justify="flex-end">
+                        <Button
+                          size="xs"
+                          colorScheme="red"
+                          onClick={() => deleteRow(i)}
+                          visibility={editMode ? 'visible' : 'hidden'}
+                        >
+                          Remove
+                        </Button>
+                      </Flex>
+                    </Stack>
+                  </Box>
+                ))}
+
+                {editMode && (
+                  <Button onClick={addRow} variant="outline">
+                    + Add Entry
+                  </Button>
+                )}
+              </Stack>
+
+              <Divider my={4} />
+
+              <Stack spacing={1} mb={2}>
+                <Heading size="xs">Summary</Heading>
+                {rows.map((r, i) => {
+                  const teamName = teams.find((t) => t.id == r.teamId)?.name || '—'
+                  const typeName = (types[r.teamId] || []).find((x) => x.id == r.typeId)?.type_name || '—'
+                  const count = r.count || '0'
+                  return (
+                    <Text key={i} fontSize="sm">
+                      {teamName} – {typeName} – {count} nos
+                    </Text>
+                  )
+                })}
+              </Stack>
+
+              {/* Sticky bottom action bar */}
+              <Box
+                position="sticky"
+                bottom={-16}
+                pt={3}
+                mt={2}
+                bg="white"
+              >
+                <Flex align="center" justify="space-between" gap={3} wrap="wrap">
+                  <Text color="textMuted" fontSize="sm">
+                    Total: <b>{totalCount}</b> nos
+                  </Text>
+                  <Flex gap={2}>
+                    <Button variant="outline" onClick={() => setScreen('home')}>
+                      ← Back
+                    </Button>
+                    {editMode ? (
+                      <Button colorScheme="brand" onClick={handleSubmit} isDisabled={!canSave()}>
+                        ✅ Save Attendance
+                      </Button>
+                    ) : (
+                      <Button onClick={() => setEditMode(true)}>
+                        ✏️ Edit
+                      </Button>
+                    )}
+                  </Flex>
+                </Flex>
+              </Box>
+            </SectionCard>
           </Stack>
         )}
 
+        {/* WORK / VIEW-WORK (unchanged) */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
         {screen === 'view-work' && (
           <ViewWorkReports onBack={() => setScreen('home')} />
         )}
       </Box>
 
-      {/* Build/version tag (commit message only) */}
+      {/* Build/version tag */}
       <BuildTag />
     </Box>
   )

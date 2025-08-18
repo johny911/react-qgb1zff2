@@ -25,7 +25,7 @@ import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
-import { BUILD_VERSION } from './version' // commit message or fallback
+import { BUILD_VERSION } from './version'
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Build/version tag in bottom-right with TRIPLE-TAP hard refresh
@@ -34,7 +34,6 @@ function BuildTag() {
 
   const hardRefresh = async () => {
     try {
-      // 1) Unregister all service workers
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations()
         await Promise.all(
@@ -44,13 +43,11 @@ function BuildTag() {
           })
         )
       }
-      // 2) Clear all caches
       if (window.caches) {
         const keys = await caches.keys()
         await Promise.all(keys.map((k) => caches.delete(k)))
       }
     } finally {
-      // 3) Reload (replace to avoid history entry)
       window.location.replace(window.location.href.split('#')[0])
     }
   }
@@ -62,7 +59,7 @@ function BuildTag() {
       t.timer = setTimeout(() => {
         t.count = 0
         t.timer = null
-      }, 800) // triple tap window
+      }, 800)
     }
     if (t.count >= 3) {
       if (t.timer) {
@@ -105,19 +102,18 @@ function BuildTag() {
 export default function MainAttendanceApp({ user, onLogout }) {
   const toast = useToast()
 
-  // ---- Persisted UI state (survives tab kills / PWA background) ----
+  // Persisted UI state
   const userKey = user?.id || 'anon'
   const today = new Date().toISOString().split('T')[0]
-
   const [screen, setScreen] = usePersistedState(`ui:screen:${userKey}`, 'home')
   const [projectId, setProjectId] = usePersistedState(`ui:project:${userKey}`, '')
   const [date, setDate] = usePersistedState(`ui:date:${userKey}`, today)
 
-  // rows key depends on selected project & date → separate draft per context
+  // rows key depends on selected project & date
   const rowsKey = `att:rows:${userKey}:${projectId || 'no-project'}:${date || 'no-date'}`
   const [rows, setRows] = usePersistedState(rowsKey, [{ teamId: '', typeId: '', count: '' }])
 
-  // ---- Server data / derived state ----
+  // Server data / derived state
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
@@ -172,7 +168,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
     })()
   }, [projectId, date, setRows])
 
-  // ---- Extra safety: flush state on background/unload ----
+  // Flush drafts on background/unload
   useEffect(() => {
     const save = () => {
       try {
@@ -184,7 +180,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
     const onVis = () => document.visibilityState === 'hidden' && save()
     const onUnload = () => save()
-
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pagehide', onUnload)
     window.addEventListener('beforeunload', onUnload)
@@ -195,16 +190,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }, [rowsKey, rows, screen, projectId, date, userKey])
 
-  // ---- Helpers ----
+  // Helpers
   const totalCount = rows.reduce((sum, r) => sum + (parseInt(r.count || '0', 10) || 0), 0)
-
   const isRowValid = (r) =>
     r.teamId && r.typeId && r.count && !Number.isNaN(parseInt(r.count, 10)) && parseInt(r.count, 10) > 0
+  const canSave = () => projectId && date && rows.length > 0 && rows.every(isRowValid)
 
-  const canSave = () =>
-    projectId && date && rows.length > 0 && rows.every(isRowValid)
-
-  // ---- Handlers ----
+  // Handlers
   const handleRowChange = (i, field, value) => {
     const copy = [...rows]
     copy[i][field] = value
@@ -213,7 +205,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   const handleRowCount = (i, value) => {
-    const val = String(value ?? '').replace(/[^\d]/g, '') // digits only
+    const val = String(value ?? '').replace(/[^\d]/g, '')
     handleRowChange(i, 'count', val)
   }
 
@@ -269,11 +261,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
 
   const fetchAttendance = async () => {
     if (!projectId || !date) {
-      toast({
-        title: 'Select project & date',
-        status: 'info',
-        duration: 1500,
-      })
+      toast({ title: 'Select project & date', status: 'info', duration: 1500 })
       return
     }
     const { data } = await supabase
@@ -306,7 +294,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   return (
-    // Apple-like background, no top header bar
     <Box bg="gray.50" minH="100vh" py={8} px={4} display="flex" alignItems="flex-start">
       <Box
         maxW="480px"
@@ -322,37 +309,18 @@ export default function MainAttendanceApp({ user, onLogout }) {
           <Stack spacing={5}>
             <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
 
-            <SectionCard
-              title="Quick actions"
-              subtitle="Choose what you’d like to do."
-            >
+            <SectionCard title="Quick actions" subtitle="Choose what you’d like to do.">
               <Stack spacing={3}>
-                <ActionButton
-                  icon="enter"
-                  variant="primary"
-                  onClick={() => setScreen('enter')}
-                >
+                <ActionButton icon="enter" variant="primary" onClick={() => setScreen('enter')}>
                   + Enter Attendance
                 </ActionButton>
-                <ActionButton
-                  icon="view"
-                  variant="outline"
-                  onClick={() => setScreen('view')}
-                >
+                <ActionButton icon="view" variant="outline" onClick={() => setScreen('view')}>
                   View Attendance
                 </ActionButton>
-                <ActionButton
-                  icon="work"
-                  variant="outline"
-                  onClick={() => setScreen('work')}
-                >
+                <ActionButton icon="work" variant="outline" onClick={() => setScreen('work')}>
                   Enter Work Report
                 </ActionButton>
-                <ActionButton
-                  icon="viewWork"
-                  variant="outline"
-                  onClick={() => setScreen('view-work')}
-                >
+                <ActionButton icon="viewWork" variant="outline" onClick={() => setScreen('view-work')}>
                   View Work Reports
                 </ActionButton>
               </Stack>
@@ -364,7 +332,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* VIEW (unchanged) */}
+        {/* VIEW */}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
@@ -379,11 +347,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 </option>
               ))}
             </Select>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <Button colorScheme="blue" onClick={fetchAttendance}>
               View
             </Button>
@@ -429,9 +393,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                     isDisabled={!editMode}
                   >
                     {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
+                      <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </Select>
                 </Box>
@@ -472,9 +434,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                           isDisabled={!editMode}
                         >
                           {teams.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name}
-                            </option>
+                            <option key={t.id} value={t.id}>{t.name}</option>
                           ))}
                         </Select>
                       </Box>
@@ -488,9 +448,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                           isDisabled={!editMode || !r.teamId}
                         >
                           {(types[r.teamId] || []).map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.type_name}
-                            </option>
+                            <option key={t.id} value={t.id}>{t.type_name}</option>
                           ))}
                         </Select>
                       </Box>
@@ -554,27 +512,25 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 })}
               </Stack>
 
-              {/* Sticky bottom action bar */}
-              <Box position="sticky" bottom={-16} pt={3} mt={2} bg="white">
-                <Flex align="center" justify="space-between" gap={3} wrap="wrap">
-                  <Text color="textMuted" fontSize="sm">
-                    Total: <b>{totalCount}</b> nos
-                  </Text>
-                  <Flex gap={2}>
-                    <Button variant="outline" onClick={() => setScreen('home')}>
-                      ← Back
-                    </Button>
-                    {editMode ? (
-                      <Button colorScheme="brand" onClick={handleSubmit} isDisabled={!canSave()}>
-                        ✅ Save Attendance
-                      </Button>
-                    ) : (
-                      <Button onClick={() => setEditMode(true)}>
-                        ✏️ Edit
-                      </Button>
-                    )}
-                  </Flex>
-                </Flex>
+              {/* ACTIONS — full-width Save; Back below (also full width) */}
+              <Box mt={4} width="100%">
+                <Button
+                  colorScheme="brand"
+                  width="100%"
+                  size="lg"
+                  onClick={handleSubmit}
+                  isDisabled={!canSave() || !editMode}
+                >
+                  ✅ Save Attendance
+                </Button>
+                <Button
+                  variant="outline"
+                  width="100%"
+                  mt={3}
+                  onClick={() => setScreen('home')}
+                >
+                  ← Back
+                </Button>
               </Box>
             </SectionCard>
           </Stack>

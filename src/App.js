@@ -5,7 +5,7 @@ import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
-import UpdateBanner from "./components/UpdateBanner";
+import UpdateBanner from './components/UpdateBanner'; // ✅ shows toast when new SW is available
 
 export default function App() {
   const [user, setUser]       = useState(null);
@@ -14,9 +14,7 @@ export default function App() {
 
   useEffect(() => {
     const getSessionAndUser = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user || null;
       setUser(currentUser);
 
@@ -33,8 +31,9 @@ export default function App() {
       (_event, session) => {
         const currentUser = session?.user || null;
         setUser(currentUser);
-        if (currentUser) fetchUserRole(currentUser.id);
-        else {
+        if (currentUser) {
+          fetchUserRole(currentUser.id);
+        } else {
           setRole(null);
           setLoading(false);
         }
@@ -90,6 +89,9 @@ export default function App() {
       <Box maxW="560px" mx="auto">
         {children}
       </Box>
+
+      {/* Banner that appears only when a new SW version is available */}
+      <UpdateBanner />
     </Box>
   );
 
@@ -108,10 +110,6 @@ export default function App() {
       </AppShell>
     );
   }
-  <>
-  {/* existing app UI */}
-  <UpdateBanner />
-</>
 
   return (
     <Flex align="center" justify="center" p={8}>

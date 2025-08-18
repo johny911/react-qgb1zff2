@@ -16,7 +16,12 @@ function BuildTag() {
     try {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(async r => { try { await r.update(); } catch {} try { await r.unregister(); } catch {} }));
+        await Promise.all(
+          regs.map(async r => {
+            try { await r.update(); } catch {}
+            try { await r.unregister(); } catch {}
+          })
+        );
       }
       if (window.caches) {
         const keys = await caches.keys();
@@ -51,7 +56,7 @@ function BuildTag() {
   );
 }
 
-/** Reusable card section that never overflows horizontally */
+/** Reusable card section with safe overflow */
 function Section({ title, right, children }) {
   return (
     <Box bg="white" p={4} borderRadius="lg" shadow="sm" mb={4} w="100%">
@@ -70,23 +75,23 @@ function Section({ title, right, children }) {
 export default function BoardDashboard({ user, onLogout }) {
   const toast = useToast();
 
-  // Filters shared
+  // -------- Shared filters (top bar) --------
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState('all');
 
-  // Overview filters
+  // Overview range
   const [windowDays, setWindowDays] = useState('30'); // 7|30|90|all
 
-  // Breakdown filters
+  // Attendance-at-a-glance date
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
-  // Data
+  // -------- Data --------
   const [dailyRows, setDailyRows] = useState([]);    // board_labour_daily
   const [rollupRows, setRollupRows] = useState([]);  // rollup from dailyRows or view
   const [breakdownRows, setBreakdownRows] = useState([]); // board_attendance_breakdown for selectedDate
 
-  // Load project list
+  // Load projects once
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from('projects').select('id,name').order('name');
@@ -94,7 +99,7 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, []);
 
-  // -------- Overview data (KPIs + rollup) --------
+  // -------- Overview fetch (project + windowDays) --------
   useEffect(() => {
     (async () => {
       const since =
@@ -133,7 +138,7 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, [selectedProject, windowDays, toast]);
 
-  // -------- Breakdown data (Team -> Type -> Count for a date) --------
+  // -------- Breakdown fetch (project + date) --------
   useEffect(() => {
     (async () => {
       let q = supabase.from('board_attendance_breakdown').select('*').eq('date', selectedDate);
@@ -155,12 +160,12 @@ export default function BoardDashboard({ user, onLogout }) {
     return { att, allo, gap: att - allo };
   }, [dailyRows]);
 
-  const refreshOverview = () => {
+  const refreshAll = () => {
     setWindowDays(prev => prev === '30' ? '29' : '30');
     setTimeout(() => setWindowDays('30'), 0);
   };
 
-  // Group breakdown by project for card rendering
+  // Group breakdown by project
   const groupedByProject = useMemo(() => {
     const map = new Map();
     for (const r of breakdownRows) {
@@ -181,7 +186,7 @@ export default function BoardDashboard({ user, onLogout }) {
       <Box maxW="800px" mx="auto" w="100%">
         {/* Header */}
         <HStack justify="space-between" mb={4} wrap="wrap" spacing={3}>
-          <Heading size="lg" lineHeight="1.15">Board Overview</Heading>
+          <Heading size="lg" lineHeight="1.15">Board</Heading>
           <HStack wrap="wrap" spacing={2}>
             <Badge colorScheme="purple" variant="subtle" maxW="100%" whiteSpace="normal">
               {user?.email}
@@ -192,7 +197,45 @@ export default function BoardDashboard({ user, onLogout }) {
           </HStack>
         </HStack>
 
-        <Tabs colorScheme="brand" variant="enclosed">
+        {/* ======= COMMON FILTER BAR ======= */}
+        <Section title="Filters">
+          <Stack direction={{ base:'column', md:'row' }} spacing={3} w="100%" align="stretch">
+            <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
+              <option value="all">All projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+
+            {/* Overview range */}
+            <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="all">All time</option>
+            </Select>
+
+            <Button onClick={refreshAll} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
+
+            {/* Date controls (Attendance tab) */}
+            <Button onClick={() => setSelectedDate(todayStr)}>Today</Button>
+            <Box as="label" display="flex" alignItems="center" gap="8px">
+              <Text fontSize="sm" color="gray.600" minW="60px">Date</Text>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                style={{
+                  height: '36px',
+                  padding: '6px 10px',
+                  border: '1px solid var(--chakra-colors-gray-200)',
+                  borderRadius: '8px'
+                }}
+              />
+            </Box>
+          </Stack>
+        </Section>
+
+        {/* ======= TABS: default to Attendance ======= */}
+        <Tabs colorScheme="brand" variant="enclosed" defaultIndex={1}>
           <TabList overflowX="auto">
             <Tab>Overview</Tab>
             <Tab>Attendance at a glance</Tab>
@@ -201,40 +244,6 @@ export default function BoardDashboard({ user, onLogout }) {
           <TabPanels>
             {/* -------- OVERVIEW TAB -------- */}
             <TabPanel px={0}>
-              <Section title="Controls">
-                <Stack direction={{ base:'column', md:'row' }} spacing={3} w="100%">
-                  <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
-                    <option value="all">All projects</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </Select>
-                  <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
-                    <option value="7">Last 7 days</option>
-                    <option value="30">Last 30 days</option>
-                    <option value="90">Last 90 days</option>
-                    <option value="all">All time</option>
-                  </Select>
-                  <Button onClick={refreshOverview} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
-                </Stack>
-
-                {/* Quick date controls (requested placement: below the dropdowns) */}
-                <HStack mt={3} spacing={3} wrap="wrap">
-                  <Button size="sm" onClick={() => setSelectedDate(todayStr)}>Today</Button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    style={{
-                      height: '36px',
-                      padding: '6px 10px',
-                      border: '1px solid var(--chakra-colors-gray-200)',
-                      borderRadius: '8px'
-                    }}
-                  />
-                  <Text fontSize="sm" color="gray.500">Used by the “Attendance at a glance” tab.</Text>
-                </HStack>
-              </Section>
-
-              {/* KPIs */}
               <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={4}>
                 <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
                   <StatLabel>Total attendance</StatLabel>
@@ -250,7 +259,6 @@ export default function BoardDashboard({ user, onLogout }) {
                 </Stat>
               </SimpleGrid>
 
-              {/* Project rollup */}
               <Section title="Project rollup">
                 <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
                   <Thead>
@@ -278,7 +286,7 @@ export default function BoardDashboard({ user, onLogout }) {
             {/* -------- ATTENDANCE AT A GLANCE TAB -------- */}
             <TabPanel px={0}>
               <Section
-                title={`At-a-glance (all projects for ${selectedDate})`}
+                title={`Attendance at a glance — ${selectedDate}`}
                 right={<Badge colorScheme="blue">Team → Type → Count</Badge>}
               >
                 {groupedByProject.length === 0 ? (
@@ -321,7 +329,7 @@ export default function BoardDashboard({ user, onLogout }) {
         </Tabs>
 
         <Text mt={3} fontSize="xs" color="gray.500">
-          Data is read-only for board users. “At-a-glance” shows attendance captured by engineers for the chosen date.
+          Overview uses the range selector; “Attendance at a glance” uses the date picker above.
         </Text>
       </Box>
 

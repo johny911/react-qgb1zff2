@@ -17,11 +17,11 @@ import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
-import { BUILD_VERSION } from './version' // -> shows "build <shortsha>"
+import { BUILD_VERSION } from './version' // now just the commit message (e.g., d5.71)
 
-// Small build/version tag in bottom-right corner
+// Small build/version tag in bottom-right corner (message only)
 function BuildTag() {
-  const label = BUILD_VERSION || 'build dev'
+  const label = BUILD_VERSION || 'dev'
   return (
     <Box
       position="fixed"
@@ -431,7 +431,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         )}
       </Box>
 
-      {/* Build/version tag */}
+      {/* Build/version tag (commit message only) */}
       <BuildTag />
     </Box>
   )

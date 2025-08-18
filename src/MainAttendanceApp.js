@@ -16,17 +16,25 @@ import WorkReport from './WorkReport'
 import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
+import usePersistedState from './hooks/usePersistedState' // ✅ persist UI state
 
 export default function MainAttendanceApp({ user, onLogout }) {
-  const [screen, setScreen] = useState('home')
+  // ---- Persisted UI state (survives tab kills / PWA background) ----
+  const userKey = user?.id || 'anon'
+  const today = new Date().toISOString().split('T')[0]
+
+  const [screen, setScreen] = usePersistedState(`ui:screen:${userKey}`, 'home')
+  const [projectId, setProjectId] = usePersistedState(`ui:project:${userKey}`, '')
+  const [date, setDate] = usePersistedState(`ui:date:${userKey}`, today)
+
+  // rows key depends on selected project & date → separate draft per context
+  const rowsKey = `att:rows:${userKey}:${projectId || 'no-project'}:${date || 'no-date'}`
+  const [rows, setRows] = usePersistedState(rowsKey, [{ teamId: '', typeId: '', count: '' }])
+
+  // ---- Server data / derived state (same as before) ----
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
-  const [rows, setRows] = useState([{ teamId: '', typeId: '', count: '' }])
-  const [projectId, setProjectId] = useState('')
-  const [date, setDate] = useState(() =>
-    new Date().toISOString().split('T')[0]
-  )
   const [attendanceMarked, setAttendanceMarked] = useState(false)
   const [editMode, setEditMode] = useState(true)
   const [showPreview, setShowPreview] = useState(false)
@@ -58,6 +66,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         .select('*')
         .eq('project_id', projectId)
         .eq('date', date)
+
       if (data?.length > 0) {
         setAttendanceMarked(true)
         setEditMode(false)
@@ -75,8 +84,33 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
       setShowPreview(false)
     })()
-  }, [projectId, date])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, date]) // (setRows comes from persisted hook; safe)
 
+  // ---- Extra safety: flush state on background/unload ----
+  useEffect(() => {
+    const save = () => {
+      try {
+        localStorage.setItem(rowsKey, JSON.stringify(rows))
+        localStorage.setItem(`ui:screen:${userKey}`, JSON.stringify(screen))
+        localStorage.setItem(`ui:project:${userKey}`, JSON.stringify(projectId))
+        localStorage.setItem(`ui:date:${userKey}`, JSON.stringify(date))
+      } catch {}
+    }
+    const onVis = () => document.visibilityState === 'hidden' && save()
+    const onUnload = () => save()
+
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', onUnload)
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pagehide', onUnload)
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [rowsKey, rows, screen, projectId, date, userKey])
+
+  // ---- Handlers (unchanged) ----
   const handleRowChange = (i, f, v) => {
     const c = [...rows]
     c[i][f] = v
@@ -91,18 +125,10 @@ export default function MainAttendanceApp({ user, onLogout }) {
     setRows(c.length ? c : [{ teamId: '', typeId: '', count: '' }])
   }
   const handleSubmit = async () => {
-    if (
-      !projectId ||
-      !date ||
-      rows.some((r) => !r.teamId || !r.typeId || !r.count)
-    ) {
+    if (!projectId || !date || rows.some((r) => !r.teamId || !r.typeId || !r.count)) {
       return alert('Please fill all fields')
     }
-    await supabase
-      .from('attendance')
-      .delete()
-      .eq('project_id', projectId)
-      .eq('date', date)
+    await supabase.from('attendance').delete().eq('project_id', projectId).eq('date', date)
     const payload = rows.map((r) => ({
       project_id: projectId,
       date,
@@ -138,7 +164,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     doc.setFontSize(10)
     doc.text(`Project: ${projectName}`, 14, 28)
     doc.text(`Date: ${date}`, 14, 34)
-
     const rowsData = viewResults.map((r) => [
       r.labour_teams.name,
       r.labour_types.type_name,

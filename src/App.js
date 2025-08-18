@@ -5,6 +5,7 @@ import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
+import UpdateBanner from "./components/UpdateBanner";
 
 export default function App() {
   const [user, setUser]       = useState(null);
@@ -107,6 +108,10 @@ export default function App() {
       </AppShell>
     );
   }
+  <>
+  {/* existing app UI */}
+  <UpdateBanner />
+</>
 
   return (
     <Flex align="center" justify="center" p={8}>

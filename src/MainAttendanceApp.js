@@ -27,8 +27,6 @@ import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
 import { BUILD_VERSION } from './version'
 
-// ───────────────────────────────────────────────────────────────────────────────
-// Build/version tag in bottom-right with TRIPLE-TAP hard refresh
 function BuildTag() {
   const tapsRef = useRef({ count: 0, timer: null })
 
@@ -97,40 +95,30 @@ function BuildTag() {
     </Box>
   )
 }
-// ───────────────────────────────────────────────────────────────────────────────
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const toast = useToast()
-
-  // Persisted UI state
   const userKey = user?.id || 'anon'
   const today = new Date().toISOString().split('T')[0]
   const [screen, setScreen] = usePersistedState(`ui:screen:${userKey}`, 'home')
   const [projectId, setProjectId] = usePersistedState(`ui:project:${userKey}`, '')
   const [date, setDate] = usePersistedState(`ui:date:${userKey}`, today)
-
-  // rows key depends on selected project & date
   const rowsKey = `att:rows:${userKey}:${projectId || 'no-project'}:${date || 'no-date'}`
   const [rows, setRows] = usePersistedState(rowsKey, [{ teamId: '', typeId: '', count: '' }])
-
-  // Server data / derived state
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
-  const [attendanceExists, setAttendanceExists] = useState(false) // NEW: does attendance exist for (project,date)?
+  const [attendanceExists, setAttendanceExists] = useState(false)
   const [editMode, setEditMode] = useState(true)
   const [showPreview, setShowPreview] = useState(false)
   const [viewResults, setViewResults] = useState([])
-
-  const isEditing = attendanceExists // mirror naming with WorkReport
+  const isEditing = attendanceExists
 
   useEffect(() => {
     ;(async () => {
       const { data: p } = await supabase.from('projects').select('id,name')
       const { data: t } = await supabase.from('labour_teams').select('id,name')
-      const { data: ty } = await supabase
-        .from('labour_types')
-        .select('id,team_id,type_name')
+      const { data: ty } = await supabase.from('labour_types').select('id,team_id,type_name')
       const map = {}
       ;(ty || []).forEach((x) => {
         map[x.team_id] = map[x.team_id] || []
@@ -142,7 +130,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     })()
   }, [])
 
-  // Load/Detect attendance for (project, date)
   useEffect(() => {
     if (!projectId || !date) {
       setAttendanceExists(false)
@@ -166,7 +153,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
 
       if ((data || []).length > 0) {
-        // Existing attendance → load rows, lock fields until "Edit"
         setAttendanceExists(true)
         setEditMode(false)
         setRows(
@@ -177,17 +163,14 @@ export default function MainAttendanceApp({ user, onLogout }) {
           }))
         )
       } else {
-        // New entry
         setAttendanceExists(false)
         setEditMode(true)
         setRows([{ teamId: '', typeId: '', count: '' }])
       }
       setShowPreview(false)
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, date])
 
-  // Flush drafts on background/unload
   useEffect(() => {
     const save = () => {
       try {
@@ -209,13 +192,11 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }, [rowsKey, rows, screen, projectId, date, userKey])
 
-  // Helpers
   const totalCount = rows.reduce((sum, r) => sum + (parseInt(r.count || '0', 10) || 0), 0)
   const isRowValid = (r) =>
     r.teamId && r.typeId && r.count && !Number.isNaN(parseInt(r.count, 10)) && parseInt(r.count, 10) > 0
   const canSave = () => projectId && date && rows.length > 0 && rows.every(isRowValid)
 
-  // Handlers
   const handleRowChange = (i, field, value) => {
     const copy = [...rows]
     copy[i][field] = value
@@ -236,7 +217,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     setRows(copy.length ? copy : [{ teamId: '', typeId: '', count: '' }])
   }
 
-  // Save/Update attendance: we REPLACE the set for (project,date) to avoid duplicates
   const handleSubmit = async () => {
     if (!canSave()) {
       toast({
@@ -249,7 +229,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
       return
     }
 
-    // Replace existing rows atomically (best-effort in client)
     const del = await supabase
       .from('attendance')
       .delete()
@@ -329,7 +308,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
         borderRadius="2xl"
         shadow="md"
       >
-        {/* HOME */}
         {screen === 'home' && (
           <Stack spacing={5}>
             <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
@@ -357,7 +335,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* VIEW */}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
@@ -394,7 +371,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* ENTER — with "existing" detection like WorkReport */}
         {screen === 'enter' && (
           <Stack spacing={5}>
             <Flex align="center" justify="space-between">
@@ -404,7 +380,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
               </Badge>
             </Flex>
 
-            {/* Details card */}
             <SectionCard title="Details" subtitle="Select project and date.">
               <Stack spacing={3}>
                 <Box>
@@ -442,7 +417,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
               </Stack>
             </SectionCard>
 
-            {/* Entries card */}
             <SectionCard title="Entries" subtitle="Add team, type and count for today.">
               <Stack spacing={3}>
                 {rows.map((r, i) => (
@@ -535,7 +509,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 })}
               </Stack>
 
-              {/* ACTIONS — full-width Save/Update; Back below */}
               <Box mt={4} width="100%">
                 <Button
                   colorScheme="brand"
@@ -559,14 +532,10 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* WORK / VIEW-WORK */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
-        {screen === 'view-work' && (
-          <ViewWorkReports onBack={() => setScreen('home')} />
-        )}
+        {screen === 'view-work' && <ViewWorkReports onBack={() => setScreen('home')} />}
       </Box>
 
-      {/* Build/version tag with triple-tap hard refresh */}
       <BuildTag />
     </Box>
   )

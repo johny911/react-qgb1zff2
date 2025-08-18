@@ -1,5 +1,6 @@
 // src/MainAttendanceApp.js
 import React, { useEffect, useState } from 'react'
+import { SectionCard, ActionButton } from './components/ui/Kit';
 import {
   Box,
   Button,
@@ -169,19 +170,30 @@ export default function MainAttendanceApp({ user, onLogout }) {
         </Flex>
 
         {screen === 'home' && (
-          <Stack spacing={4}>
-            <Text fontSize="lg">Welcome, {user.email.split('@')[0]}</Text>
-            <Button colorScheme="blue" onClick={() => setScreen('enter')}>
-              + Enter Attendance
-            </Button>
-            <Button onClick={() => setScreen('view')}>View Attendance</Button>
-            <Button onClick={() => setScreen('work')}>Work Done Report</Button>
-            <Button onClick={() => setScreen('view-work')}>
-              View Work Done Report
-            </Button>
-          </Stack>
-        )}
+  <Stack spacing={5}>
+    <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
 
+    <SectionCard
+      title="Quick actions"
+      subtitle="Choose what you’d like to do."
+    >
+      <Stack spacing={3}>
+        <ActionButton icon="enter"   variant="primary" onClick={() => setScreen('enter')}>
+          + Enter Attendance
+        </ActionButton>
+        <ActionButton icon="view"    variant="outline" onClick={() => setScreen('view')}>
+          View Attendance
+        </ActionButton>
+        <ActionButton icon="work"    variant="outline" onClick={() => setScreen('work')}>
+          Enter Work Report
+        </ActionButton>
+        <ActionButton icon="viewWork" variant="outline" onClick={() => setScreen('view-work')}>
+          View Work Reports
+        </ActionButton>
+      </Stack>
+    </SectionCard>
+  </Stack>
+)}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>

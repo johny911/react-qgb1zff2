@@ -117,10 +117,12 @@ export default function MainAttendanceApp({ user, onLogout }) {
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
-  const [attendanceMarked, setAttendanceMarked] = useState(false)
+  const [attendanceExists, setAttendanceExists] = useState(false) // NEW: does attendance exist for (project,date)?
   const [editMode, setEditMode] = useState(true)
   const [showPreview, setShowPreview] = useState(false)
   const [viewResults, setViewResults] = useState([])
+
+  const isEditing = attendanceExists // mirror naming with WorkReport
 
   useEffect(() => {
     ;(async () => {
@@ -140,33 +142,50 @@ export default function MainAttendanceApp({ user, onLogout }) {
     })()
   }, [])
 
+  // Load/Detect attendance for (project, date)
   useEffect(() => {
-    if (!projectId || !date) return
+    if (!projectId || !date) {
+      setAttendanceExists(false)
+      setEditMode(true)
+      return
+    }
     ;(async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('attendance')
         .select('*')
         .eq('project_id', projectId)
         .eq('date', date)
 
-      if (data?.length > 0) {
-        setAttendanceMarked(true)
+      if (error) {
+        console.error('attendance fetch error:', error.message)
+        setAttendanceExists(false)
+        setEditMode(true)
+        setRows([{ teamId: '', typeId: '', count: '' }])
+        setShowPreview(false)
+        return
+      }
+
+      if ((data || []).length > 0) {
+        // Existing attendance → load rows, lock fields until "Edit"
+        setAttendanceExists(true)
         setEditMode(false)
         setRows(
           data.map((r) => ({
             teamId: String(r.team_id),
             typeId: String(r.labour_type_id),
-            count: r.count.toString(),
+            count: String(r.count ?? ''),
           }))
         )
       } else {
-        setAttendanceMarked(false)
+        // New entry
+        setAttendanceExists(false)
         setEditMode(true)
         setRows([{ teamId: '', typeId: '', count: '' }])
       }
       setShowPreview(false)
     })()
-  }, [projectId, date, setRows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, date])
 
   // Flush drafts on background/unload
   useEffect(() => {
@@ -217,6 +236,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
     setRows(copy.length ? copy : [{ teamId: '', typeId: '', count: '' }])
   }
 
+  // Save/Update attendance: we REPLACE the set for (project,date) to avoid duplicates
   const handleSubmit = async () => {
     if (!canSave()) {
       toast({
@@ -229,7 +249,17 @@ export default function MainAttendanceApp({ user, onLogout }) {
       return
     }
 
-    await supabase.from('attendance').delete().eq('project_id', projectId).eq('date', date)
+    // Replace existing rows atomically (best-effort in client)
+    const del = await supabase
+      .from('attendance')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('date', date)
+    if (del.error) {
+      toast({ title: 'Save failed (delete)', description: del.error.message, status: 'error' })
+      return
+    }
+
     const payload = rows.map((r) => ({
       project_id: projectId,
       date,
@@ -237,26 +267,21 @@ export default function MainAttendanceApp({ user, onLogout }) {
       labour_type_id: r.typeId,
       count: parseInt(r.count, 10),
     }))
-    const { error } = await supabase.from('attendance').insert(payload)
-    if (error) {
-      toast({
-        title: 'Save failed',
-        description: error.message,
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      })
-    } else {
-      toast({
-        title: 'Attendance saved',
-        description: `${totalCount} entries saved for ${date}.`,
-        status: 'success',
-        duration: 2000,
-      })
-      setAttendanceMarked(true)
-      setEditMode(false)
-      setShowPreview(false)
+    const ins = await supabase.from('attendance').insert(payload)
+    if (ins.error) {
+      toast({ title: 'Save failed (insert)', description: ins.error.message, status: 'error' })
+      return
     }
+
+    toast({
+      title: isEditing ? 'Attendance updated' : 'Attendance saved',
+      description: `${totalCount} entries for ${date}.`,
+      status: 'success',
+      duration: 2000,
+    })
+    setAttendanceExists(true)
+    setEditMode(false)
+    setShowPreview(false)
   }
 
   const fetchAttendance = async () => {
@@ -369,16 +394,14 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* ENTER — redesigned */}
+        {/* ENTER — with "existing" detection like WorkReport */}
         {screen === 'enter' && (
           <Stack spacing={5}>
             <Flex align="center" justify="space-between">
               <Heading size="sm">Enter Attendance</Heading>
-              {attendanceMarked && !editMode ? (
-                <Badge colorScheme="green" variant="subtle">Saved</Badge>
-              ) : (
-                <Badge colorScheme="yellow" variant="subtle">Draft</Badge>
-              )}
+              <Badge colorScheme={isEditing ? 'purple' : 'yellow'} variant="subtle">
+                {isEditing ? 'Editing existing attendance' : 'Draft'}
+              </Badge>
             </Flex>
 
             {/* Details card */}
@@ -408,9 +431,9 @@ export default function MainAttendanceApp({ user, onLogout }) {
                   />
                 </Box>
 
-                {attendanceMarked && !editMode && (
+                {isEditing && !editMode && (
                   <Flex align="center" justify="space-between" pt={1}>
-                    <Text color="green.600" fontSize="sm">✅ Attendance already marked</Text>
+                    <Text color="green.600" fontSize="sm">✅ Attendance already exists for this date.</Text>
                     <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
                       Edit
                     </Button>
@@ -469,7 +492,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                         </NumberInput>
                       </Box>
 
-                      {!isRowValid(r) && (
+                      {!isRowValid(r) && editMode && (
                         <Text fontSize="xs" color="red.500">
                           Complete team, type and a positive count.
                         </Text>
@@ -512,7 +535,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 })}
               </Stack>
 
-              {/* ACTIONS — full-width Save; Back below (also full width) */}
+              {/* ACTIONS — full-width Save/Update; Back below */}
               <Box mt={4} width="100%">
                 <Button
                   colorScheme="brand"
@@ -521,7 +544,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                   onClick={handleSubmit}
                   isDisabled={!canSave() || !editMode}
                 >
-                  ✅ Save Attendance
+                  {isEditing ? '💾 Update Attendance' : '✅ Save Attendance'}
                 </Button>
                 <Button
                   variant="outline"
@@ -536,7 +559,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* WORK / VIEW-WORK (unchanged) */}
+        {/* WORK / VIEW-WORK */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
         {screen === 'view-work' && (
           <ViewWorkReports onBack={() => setScreen('home')} />

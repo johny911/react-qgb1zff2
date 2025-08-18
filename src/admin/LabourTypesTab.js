@@ -1,33 +1,15 @@
-// src/admin/LabourTypesTab.js
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
-  Stack, HStack, Input, Button, IconButton, Text, Divider, Box, Select, Badge,
+  Box, HStack, Input, IconButton, Button, Stack, Text, Select, Badge
 } from '@chakra-ui/react';
-import { FiPlus, FiEdit2, FiTrash2, FiRefreshCw, FiSave, FiX } from 'react-icons/fi';
+import { FiPlus, FiRefreshCcw, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { supabase } from '../supabaseClient';
 
 export default function LabourTypesTab() {
-  const [loading, setLoading] = useState(false);
   const [teams, setTeams] = useState([]);
   const [types, setTypes] = useState([]);
-
-  const [newType, setNewType] = useState({ team_id: '', type_name: '' });
-
-  const [editId, setEditId] = useState(null);
-  const [editName, setEditName] = useState('');
-
-  const fetchAll = async () => {
-    setLoading(true);
-    const [{ data: tms }, { data: tys }] = await Promise.all([
-      supabase.from('labour_teams').select('*').order('name', { ascending: true }),
-      supabase.from('labour_types').select('*').order('type_name', { ascending: true }),
-    ]);
-    setTeams(tms || []);
-    setTypes(tys || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchAll(); }, []);
+  const [newTeamId, setNewTeamId] = useState('');
+  const [newType, setNewType] = useState('');
 
   const teamById = useMemo(() => {
     const m = {};
@@ -35,93 +17,85 @@ export default function LabourTypesTab() {
     return m;
   }, [teams]);
 
+  const refresh = async () => {
+    const [{ data: t }, { data: ty }] = await Promise.all([
+      supabase.from('labour_teams').select('*').order('name', { ascending: true }),
+      supabase.from('labour_types').select('*').order('type_name', { ascending: true }),
+    ]);
+    setTeams(t || []);
+    setTypes(ty || []);
+  };
+  useEffect(() => { refresh(); }, []);
+
   const addType = async () => {
-    const { team_id, type_name } = newType;
-    if (!team_id || !type_name.trim()) return;
-    await supabase.from('labour_types').insert({ team_id, type_name: type_name.trim() });
-    setNewType({ team_id: '', type_name: '' });
-    fetchAll();
+    if (!newTeamId || !newType.trim()) return;
+    await supabase.from('labour_types').insert({ team_id: newTeamId, type_name: newType.trim() });
+    setNewType('');
+    refresh();
   };
-
-  const startEdit = (lt) => { setEditId(lt.id); setEditName(lt.type_name); };
-  const cancelEdit = () => { setEditId(null); setEditName(''); };
-
-  const saveEdit = async () => {
-    if (!editName.trim()) return;
-    await supabase.from('labour_types').update({ type_name: editName.trim() }).eq('id', editId);
-    cancelEdit();
-    fetchAll();
+  const editType = async (row) => {
+    const name = prompt('Edit labour type name:', row.type_name);
+    if (name && name.trim()) {
+      await supabase.from('labour_types').update({ type_name: name.trim() }).eq('id', row.id);
+      refresh();
+    }
   };
-
-  const del = async (id) => {
-    if (!window.confirm('Delete this labour type?')) return;
-    await supabase.from('labour_types').delete().eq('id', id);
-    fetchAll();
+  const deleteType = async (row) => {
+    if (confirm('Delete this labour type?')) {
+      await supabase.from('labour_types').delete().eq('id', row.id);
+      refresh();
+    }
   };
 
   return (
-    <Stack spacing={4}>
-      <HStack align="flex-start">
+    <Stack spacing={4} w="100%">
+      <HStack w="100%" spacing={3} align="stretch">
         <Select
           placeholder="Select team"
-          value={newType.team_id}
-          onChange={(e) => setNewType({ ...newType, team_id: e.target.value })}
-          maxW="260px"
+          value={newTeamId}
+          onChange={(e) => setNewTeamId(e.target.value)}
+          flex="0 0 45%"
+          minW={0}
         >
-          {teams.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </Select>
         <Input
           placeholder="New labour type"
-          value={newType.type_name}
-          onChange={(e) => setNewType({ ...newType, type_name: e.target.value })}
+          value={newType}
+          onChange={(e) => setNewType(e.target.value)}
+          flex="1"
+          minW={0}
         />
-        <Button leftIcon={<FiPlus />} onClick={addType} colorScheme="brand">
-          Add
-        </Button>
-        <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={fetchAll} variant="ghost" />
+        <Button onClick={addType} leftIcon={<FiPlus />} flexShrink={0}>Add</Button>
+        <IconButton aria-label="Refresh" icon={<FiRefreshCcw />} onClick={refresh} variant="outline" flexShrink={0} />
       </HStack>
 
-      <Divider />
-
       <Stack spacing={3}>
-        {loading && <Text fontSize="sm" color="gray.500">Loading…</Text>}
-        {!loading && types.length === 0 && (
-          <Text fontSize="sm" color="gray.500">No labour types yet.</Text>
-        )}
-
-        {types.map((lt) => (
+        {types.map((row) => (
           <HStack
-            key={lt.id}
-            justify="space-between"
+            key={row.id}
+            w="100%"
             p={3}
+            bg="gray.50"
             border="1px solid"
             borderColor="gray.200"
             borderRadius="lg"
-            bg="gray.50"
+            spacing={3}
+            align="center"
           >
-            {editId === lt.id ? (
-              <HStack w="100%">
-                <Badge colorScheme="gray">{teamById[lt.team_id]?.name || `Team #${lt.team_id}`}</Badge>
-                <Input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
-                <IconButton aria-label="Save" icon={<FiSave />} onClick={saveEdit} colorScheme="brand" />
-                <IconButton aria-label="Cancel" icon={<FiX />} onClick={cancelEdit} />
-              </HStack>
-            ) : (
-              <>
-                <HStack flex="1">
-                  <Badge colorScheme="gray">{teamById[lt.team_id]?.name || `Team #${lt.team_id}`}</Badge>
-                  <Text>{lt.type_name}</Text>
-                </HStack>
-                <HStack>
-                  <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => startEdit(lt)} />
-                  <IconButton aria-label="Delete" icon={<FiTrash2 />} colorScheme="red" variant="outline" onClick={() => del(lt.id)} />
-                </HStack>
-              </>
-            )}
+            <Box flex="1" minW={0}>
+              <Badge colorScheme="gray" mb={1}>{teamById[row.team_id]?.name || 'Team'}</Badge>
+              <Text noOfLines={2} fontWeight="semibold">{row.type_name}</Text>
+            </Box>
+            <HStack spacing={2} flexShrink={0}>
+              <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => editType(row)} />
+              <IconButton aria-label="Delete" icon={<FiTrash2 />} onClick={() => deleteType(row)} />
+            </HStack>
           </HStack>
         ))}
+        {types.length === 0 && (
+          <Box color="gray.500" fontSize="sm">No labour types yet.</Box>
+        )}
       </Stack>
     </Stack>
   );

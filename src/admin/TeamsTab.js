@@ -1,100 +1,78 @@
-// src/admin/TeamsTab.js
 import React, { useEffect, useState } from 'react';
 import {
-  Stack, HStack, Input, Button, IconButton, Text, Divider, Box,
+  Box, HStack, Input, IconButton, Button, Stack, Text
 } from '@chakra-ui/react';
-import { FiPlus, FiEdit2, FiTrash2, FiRefreshCw, FiSave, FiX } from 'react-icons/fi';
+import { FiPlus, FiRefreshCcw, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { supabase } from '../supabaseClient';
 
 export default function TeamsTab() {
-  const [loading, setLoading] = useState(false);
   const [teams, setTeams] = useState([]);
   const [newTeam, setNewTeam] = useState('');
-
-  const [editId, setEditId] = useState(null);
-  const [editName, setEditName] = useState('');
-
-  const fetchTeams = async () => {
-    setLoading(true);
+  const refresh = async () => {
     const { data } = await supabase.from('labour_teams').select('*').order('name', { ascending: true });
     setTeams(data || []);
-    setLoading(false);
   };
-
-  useEffect(() => { fetchTeams(); }, []);
+  useEffect(() => { refresh(); }, []);
 
   const addTeam = async () => {
     if (!newTeam.trim()) return;
     await supabase.from('labour_teams').insert({ name: newTeam.trim() });
     setNewTeam('');
-    fetchTeams();
+    refresh();
   };
-
-  const startEdit = (t) => { setEditId(t.id); setEditName(t.name); };
-  const cancelEdit = () => { setEditId(null); setEditName(''); };
-
-  const saveEdit = async () => {
-    if (!editName.trim()) return;
-    await supabase.from('labour_teams').update({ name: editName.trim() }).eq('id', editId);
-    cancelEdit();
-    fetchTeams();
+  const editTeam = async (t) => {
+    const name = prompt('Edit team name:', t.name);
+    if (name && name.trim()) {
+      await supabase.from('labour_teams').update({ name: name.trim() }).eq('id', t.id);
+      refresh();
+    }
   };
-
-  const del = async (id) => {
-    if (!window.confirm('Delete this team?')) return;
-    await supabase.from('labour_teams').delete().eq('id', id);
-    fetchTeams();
+  const deleteTeam = async (t) => {
+    if (confirm('Delete this team?')) {
+      await supabase.from('labour_teams').delete().eq('id', t.id);
+      refresh();
+    }
   };
 
   return (
-    <Stack spacing={4}>
-      <HStack>
+    <Stack spacing={4} w="100%">
+      <HStack w="100%" spacing={3} align="stretch">
         <Input
           placeholder="New team name"
           value={newTeam}
           onChange={(e) => setNewTeam(e.target.value)}
+          flex="1"
+          minW={0}
         />
-        <Button leftIcon={<FiPlus />} onClick={addTeam} colorScheme="brand">
-          Add
-        </Button>
-        <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={fetchTeams} variant="ghost" />
+        <Button onClick={addTeam} leftIcon={<FiPlus />} flexShrink={0}>Add</Button>
+        <IconButton aria-label="Refresh" icon={<FiRefreshCcw />} onClick={refresh} variant="outline" flexShrink={0} />
       </HStack>
 
-      <Divider />
-
       <Stack spacing={3}>
-        {loading && <Text fontSize="sm" color="gray.500">Loading…</Text>}
-        {!loading && teams.length === 0 && (
-          <Text fontSize="sm" color="gray.500">No teams yet.</Text>
-        )}
-
         {teams.map((t) => (
           <HStack
             key={t.id}
-            justify="space-between"
+            w="100%"
             p={3}
+            bg="gray.50"
             border="1px solid"
             borderColor="gray.200"
             borderRadius="lg"
-            bg="gray.50"
+            spacing={3}
+            align="center"
           >
-            {editId === t.id ? (
-              <HStack w="100%">
-                <Input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
-                <IconButton aria-label="Save" icon={<FiSave />} onClick={saveEdit} colorScheme="brand" />
-                <IconButton aria-label="Cancel" icon={<FiX />} onClick={cancelEdit} />
-              </HStack>
-            ) : (
-              <>
-                <Box flex="1"><Text>{t.name}</Text></Box>
-                <HStack>
-                  <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => startEdit(t)} />
-                  <IconButton aria-label="Delete" icon={<FiTrash2 />} colorScheme="red" variant="outline" onClick={() => del(t.id)} />
-                </HStack>
-              </>
-            )}
+            <Text flex="1" minW={0} noOfLines={2} fontWeight="semibold">
+              {t.name}
+            </Text>
+            <HStack spacing={2} flexShrink={0}>
+              <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => editTeam(t)} />
+              <IconButton aria-label="Delete" icon={<FiTrash2 />} onClick={() => deleteTeam(t)} />
+            </HStack>
           </HStack>
         ))}
+        {teams.length === 0 && (
+          <Box color="gray.500" fontSize="sm">No teams yet.</Box>
+        )}
       </Stack>
     </Stack>
   );

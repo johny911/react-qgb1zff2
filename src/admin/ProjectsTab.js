@@ -1,100 +1,78 @@
-// src/admin/ProjectsTab.js
 import React, { useEffect, useState } from 'react';
 import {
-  Stack, HStack, Input, Button, IconButton, Text, Divider, Box,
+  Box, HStack, Input, IconButton, Button, Stack, Text
 } from '@chakra-ui/react';
-import { FiPlus, FiEdit2, FiTrash2, FiRefreshCw, FiSave, FiX } from 'react-icons/fi';
+import { FiPlus, FiRefreshCcw, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { supabase } from '../supabaseClient';
 
 export default function ProjectsTab() {
-  const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState([]);
   const [newProject, setNewProject] = useState('');
-
-  const [editId, setEditId] = useState(null);
-  const [editName, setEditName] = useState('');
-
-  const fetchProjects = async () => {
-    setLoading(true);
+  const refresh = async () => {
     const { data } = await supabase.from('projects').select('*').order('name', { ascending: true });
     setProjects(data || []);
-    setLoading(false);
   };
-
-  useEffect(() => { fetchProjects(); }, []);
+  useEffect(() => { refresh(); }, []);
 
   const addProject = async () => {
     if (!newProject.trim()) return;
     await supabase.from('projects').insert({ name: newProject.trim() });
     setNewProject('');
-    fetchProjects();
+    refresh();
   };
-
-  const startEdit = (p) => { setEditId(p.id); setEditName(p.name); };
-  const cancelEdit = () => { setEditId(null); setEditName(''); };
-
-  const saveEdit = async () => {
-    if (!editName.trim()) return;
-    await supabase.from('projects').update({ name: editName.trim() }).eq('id', editId);
-    cancelEdit();
-    fetchProjects();
+  const editProject = async (p) => {
+    const name = prompt('Edit project name:', p.name);
+    if (name && name.trim()) {
+      await supabase.from('projects').update({ name: name.trim() }).eq('id', p.id);
+      refresh();
+    }
   };
-
-  const del = async (id) => {
-    if (!window.confirm('Delete this project?')) return;
-    await supabase.from('projects').delete().eq('id', id);
-    fetchProjects();
+  const deleteProject = async (p) => {
+    if (confirm('Delete this project?')) {
+      await supabase.from('projects').delete().eq('id', p.id);
+      refresh();
+    }
   };
 
   return (
-    <Stack spacing={4}>
-      <HStack>
+    <Stack spacing={4} w="100%">
+      <HStack w="100%" spacing={3} align="stretch">
         <Input
           placeholder="New project name"
           value={newProject}
           onChange={(e) => setNewProject(e.target.value)}
+          flex="1"
+          minW={0}
         />
-        <Button leftIcon={<FiPlus />} onClick={addProject} colorScheme="brand">
-          Add
-        </Button>
-        <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={fetchProjects} variant="ghost" />
+        <Button onClick={addProject} leftIcon={<FiPlus />} flexShrink={0}>Add</Button>
+        <IconButton aria-label="Refresh" icon={<FiRefreshCcw />} onClick={refresh} variant="outline" flexShrink={0} />
       </HStack>
 
-      <Divider />
-
       <Stack spacing={3}>
-        {loading && <Text fontSize="sm" color="gray.500">Loading…</Text>}
-        {!loading && projects.length === 0 && (
-          <Text fontSize="sm" color="gray.500">No projects yet.</Text>
-        )}
-
         {projects.map((p) => (
           <HStack
             key={p.id}
-            justify="space-between"
+            w="100%"
             p={3}
+            bg="gray.50"
             border="1px solid"
             borderColor="gray.200"
             borderRadius="lg"
-            bg="gray.50"
+            spacing={3}
+            align="center"
           >
-            {editId === p.id ? (
-              <HStack w="100%">
-                <Input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
-                <IconButton aria-label="Save" icon={<FiSave />} onClick={saveEdit} colorScheme="brand" />
-                <IconButton aria-label="Cancel" icon={<FiX />} onClick={cancelEdit} />
-              </HStack>
-            ) : (
-              <>
-                <Box flex="1"><Text>{p.name}</Text></Box>
-                <HStack>
-                  <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => startEdit(p)} />
-                  <IconButton aria-label="Delete" icon={<FiTrash2 />} colorScheme="red" variant="outline" onClick={() => del(p.id)} />
-                </HStack>
-              </>
-            )}
+            <Text flex="1" minW={0} noOfLines={2} fontWeight="semibold">
+              {p.name}
+            </Text>
+            <HStack spacing={2} flexShrink={0}>
+              <IconButton aria-label="Edit" icon={<FiEdit2 />} onClick={() => editProject(p)} />
+              <IconButton aria-label="Delete" icon={<FiTrash2 />} onClick={() => deleteProject(p)} />
+            </HStack>
           </HStack>
         ))}
+        {projects.length === 0 && (
+          <Box color="gray.500" fontSize="sm">No projects yet.</Box>
+        )}
       </Stack>
     </Stack>
   );

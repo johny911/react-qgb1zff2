@@ -1,65 +1,62 @@
-// src/admin/AssignTab.js
 import React, { useEffect, useState } from 'react';
-import {
-  Stack, Select, Button, Text,
-} from '@chakra-ui/react';
-import { FiUserCheck } from 'react-icons/fi';
+import { Box, Heading, Text, Stack, Select, Button } from '@chakra-ui/react';
 import { supabase } from '../supabaseClient';
-import { SectionCard } from '../components/ui/Kit';
 
 export default function AssignTab() {
-  const [projects, setProjects] = useState([]);
   const [engineers, setEngineers] = useState([]);
-  const [assignedProjectId, setAssignedProjectId] = useState('');
-  const [assignedUserId, setAssignedUserId] = useState('');
+  const [projects, setProjects] = useState([]);
+  const [userId, setUserId] = useState('');
+  const [projectId, setProjectId] = useState('');
 
-  const fetchData = async () => {
-    const [{ data: proj }, { data: engs }] = await Promise.all([
-      supabase.from('projects').select('*').order('name', { ascending: true }),
-      supabase.from('users').select('*').eq('role', 'engineer').order('email', { ascending: true }),
-    ]);
-    setProjects(proj || []);
-    setEngineers(engs || []);
-  };
+  useEffect(() => {
+    (async () => {
+      const [{ data: engs }, { data: projs }] = await Promise.all([
+        supabase.from('users').select('id,email').eq('role', 'engineer'),
+        supabase.from('projects').select('id,name').order('name', { ascending: true }),
+      ]);
+      setEngineers(engs || []);
+      setProjects(projs || []);
+    })();
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
-
-  const assignProject = async () => {
-    if (!assignedProjectId || !assignedUserId) return alert('Select an engineer and a project');
-    await supabase
-      .from('project_assignments')
-      .insert({ project_id: assignedProjectId, user_id: assignedUserId });
-    setAssignedProjectId('');
-    setAssignedUserId('');
-    alert('Assigned!');
+  const assign = async () => {
+    if (!userId || !projectId) return;
+    await supabase.from('project_assignments').insert({ user_id: userId, project_id: projectId });
+    setUserId('');
+    setProjectId('');
   };
 
   return (
-    <SectionCard title="Assign Project" subtitle="Assign an engineer to a project.">
+    <Stack spacing={4} w="100%">
+      <Box>
+        <Heading size="md">Assign Project</Heading>
+        <Text color="gray.600">Assign an engineer to a project.</Text>
+      </Box>
+
       <Stack spacing={3}>
         <Select
           placeholder="Select engineer"
-          value={assignedUserId}
-          onChange={(e) => setAssignedUserId(e.target.value)}
+          value={userId}
+          onChange={(e) => setUserId(e.target.value)}
+          w="100%"
         >
-          {engineers.map((u) => (
-            <option key={u.id} value={u.id}>{u.email}</option>
-          ))}
+          {engineers.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
         </Select>
+
         <Select
           placeholder="Select project"
-          value={assignedProjectId}
-          onChange={(e) => setAssignedProjectId(e.target.value)}
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          w="100%"
         >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
-        <Button leftIcon={<FiUserCheck />} colorScheme="brand" onClick={assignProject}>
-          Assign
+
+        <Button colorScheme="brand" onClick={assign}>
+          👤 Assign
         </Button>
-        <Text fontSize="xs" color="gray.500">You can reassign any time.</Text>
+        <Text fontSize="sm" color="gray.500">You can reassign any time.</Text>
       </Stack>
-    </SectionCard>
+    </Stack>
   );
 }

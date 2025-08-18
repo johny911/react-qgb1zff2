@@ -1,6 +1,6 @@
 // src/MainAttendanceApp.js
 import React, { useEffect, useState } from 'react'
-import { SectionCard, ActionButton } from './components/ui/Kit';
+import { SectionCard, ActionButton } from './components/ui/Kit'
 import {
   Box,
   Button,
@@ -40,7 +40,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         .from('labour_types')
         .select('id,team_id,type_name')
       const map = {}
-      ty.forEach((x) => {
+      ;(ty || []).forEach((x) => {
         map[x.team_id] = map[x.team_id] || []
         map[x.team_id].push(x)
       })
@@ -153,47 +153,65 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   return (
-    <Box bg="gray.50" minH="100vh" py={8} px={4}>
+    // Apple-like background, no top header bar
+    <Box bg="gray.50" minH="100vh" py={8} px={4} display="flex" alignItems="flex-start">
       <Box
-        maxW="460px"
+        maxW="480px"
+        w="100%"
         bg="white"
         mx="auto"
-        p={6}
-        borderRadius="lg"
+        p={{ base: 5, md: 6 }}
+        borderRadius="2xl"
         shadow="md"
       >
-        <Flex justify="space-between" align="center" mb={6} wrap="wrap">
-          <Heading size="md">SiteTrack</Heading>
-          <Button size="sm" variant="outline" onClick={onLogout}>
-            Logout
-          </Button>
-        </Flex>
-
+        {/* HOME — clean card, no top title/logout row */}
         {screen === 'home' && (
-  <Stack spacing={5}>
-    <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
+          <Stack spacing={5}>
+            <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
 
-    <SectionCard
-      title="Quick actions"
-      subtitle="Choose what you’d like to do."
-    >
-      <Stack spacing={3}>
-        <ActionButton icon="enter"   variant="primary" onClick={() => setScreen('enter')}>
-          + Enter Attendance
-        </ActionButton>
-        <ActionButton icon="view"    variant="outline" onClick={() => setScreen('view')}>
-          View Attendance
-        </ActionButton>
-        <ActionButton icon="work"    variant="outline" onClick={() => setScreen('work')}>
-          Enter Work Report
-        </ActionButton>
-        <ActionButton icon="viewWork" variant="outline" onClick={() => setScreen('view-work')}>
-          View Work Reports
-        </ActionButton>
-      </Stack>
-    </SectionCard>
-  </Stack>
-)}
+            <SectionCard
+              title="Quick actions"
+              subtitle="Choose what you’d like to do."
+            >
+              <Stack spacing={3}>
+                <ActionButton
+                  icon="enter"
+                  variant="primary"
+                  onClick={() => setScreen('enter')}
+                >
+                  + Enter Attendance
+                </ActionButton>
+                <ActionButton
+                  icon="view"
+                  variant="outline"
+                  onClick={() => setScreen('view')}
+                >
+                  View Attendance
+                </ActionButton>
+                <ActionButton
+                  icon="work"
+                  variant="outline"
+                  onClick={() => setScreen('work')}
+                >
+                  Enter Work Report
+                </ActionButton>
+                <ActionButton
+                  icon="viewWork"
+                  variant="outline"
+                  onClick={() => setScreen('view-work')}
+                >
+                  View Work Reports
+                </ActionButton>
+              </Stack>
+
+              {/* Optional: subtle logout at the bottom of the card */}
+              <Button mt={6} size="sm" variant="outline" w="100%" onClick={onLogout}>
+                Logout
+              </Button>
+            </SectionCard>
+          </Stack>
+        )}
+
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
@@ -234,7 +252,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
-        {/* Rest of the screens remain unchanged */}
         {screen === 'enter' && (
           <Stack spacing={4}>
             <Heading size="sm">Enter Attendance</Heading>
@@ -335,7 +352,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                         const name =
                           teams.find((t) => t.id == r.teamId)?.name || 'Team'
                         const typeName =
-                          types[r.teamId]?.find((x) => x.id == r.typeId)
+                          (types[r.teamId] || []).find((x) => x.id == r.typeId)
                             ?.type_name || 'Type'
                         return (
                           <Text key={i}>

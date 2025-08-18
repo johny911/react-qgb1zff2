@@ -1,5 +1,5 @@
 // src/MainAttendanceApp.js
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { SectionCard, ActionButton } from './components/ui/Kit'
 import {
   Box,
@@ -25,13 +25,59 @@ import ViewWorkReports from './ViewWorkReports'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
-import { BUILD_VERSION } from './version' // commit message only
+import { BUILD_VERSION } from './version' // commit message or fallback
 
-// Small build/version tag in bottom-right corner (message only)
+// ───────────────────────────────────────────────────────────────────────────────
+// Build/version tag in bottom-right with TRIPLE-TAP hard refresh
 function BuildTag() {
+  const tapsRef = useRef({ count: 0, timer: null })
+
+  const hardRefresh = async () => {
+    try {
+      // 1) Unregister all service workers
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(
+          regs.map(async (r) => {
+            try { await r.update() } catch {}
+            try { await r.unregister() } catch {}
+          })
+        )
+      }
+      // 2) Clear all caches
+      if (window.caches) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+      }
+    } finally {
+      // 3) Reload (replace to avoid history entry)
+      window.location.replace(window.location.href.split('#')[0])
+    }
+  }
+
+  const onTap = () => {
+    const t = tapsRef.current
+    t.count += 1
+    if (t.count === 1) {
+      t.timer = setTimeout(() => {
+        t.count = 0
+        t.timer = null
+      }, 800) // triple tap window
+    }
+    if (t.count >= 3) {
+      if (t.timer) {
+        clearTimeout(t.timer)
+        t.timer = null
+      }
+      t.count = 0
+      hardRefresh()
+    }
+  }
+
   const label = BUILD_VERSION || 'dev'
   return (
     <Box
+      onClick={onTap}
       position="fixed"
       bottom="8px"
       right="12px"
@@ -45,13 +91,16 @@ function BuildTag() {
       borderRadius="md"
       shadow="sm"
       opacity={0.95}
-      pointerEvents="none"
       zIndex={1000}
+      cursor="pointer"
+      title="Triple-tap to hard refresh"
+      aria-label="Build version badge. Triple-tap to hard refresh."
     >
       {label}
     </Box>
   )
 }
+// ───────────────────────────────────────────────────────────────────────────────
 
 export default function MainAttendanceApp({ user, onLogout }) {
   const toast = useToast()
@@ -164,7 +213,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
   }
 
   const handleRowCount = (i, value) => {
-    const val = value.replace(/[^\d]/g, '') // keep digits only
+    const val = String(value ?? '').replace(/[^\d]/g, '') // digits only
     handleRowChange(i, 'count', val)
   }
 
@@ -408,11 +457,8 @@ export default function MainAttendanceApp({ user, onLogout }) {
               </Stack>
             </SectionCard>
 
-            {/* Rows card */}
-            <SectionCard
-              title="Entries"
-              subtitle="Add team, type and count for today."
-            >
+            {/* Entries card */}
+            <SectionCard title="Entries" subtitle="Add team, type and count for today.">
               <Stack spacing={3}>
                 {rows.map((r, i) => (
                   <Box key={i} bg="gray.50" p={3} borderRadius="md" border="1px solid" borderColor="gray.200">
@@ -509,13 +555,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
               </Stack>
 
               {/* Sticky bottom action bar */}
-              <Box
-                position="sticky"
-                bottom={-16}
-                pt={3}
-                mt={2}
-                bg="white"
-              >
+              <Box position="sticky" bottom={-16} pt={3} mt={2} bg="white">
                 <Flex align="center" justify="space-between" gap={3} wrap="wrap">
                   <Text color="textMuted" fontSize="sm">
                     Total: <b>{totalCount}</b> nos
@@ -547,7 +587,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         )}
       </Box>
 
-      {/* Build/version tag */}
+      {/* Build/version tag with triple-tap hard refresh */}
       <BuildTag />
     </Box>
   )

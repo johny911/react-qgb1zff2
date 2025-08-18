@@ -3,12 +3,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Heading, Text, HStack, VStack, Stack, Select, Button, Badge,
   SimpleGrid, Stat, StatLabel, StatNumber, Table, Thead, Tbody, Tr, Th, Td,
-  useToast, Icon, Divider, Input, Switch, FormControl, FormLabel
+  useToast, Icon, Divider
 } from '@chakra-ui/react';
 import { supabase } from './supabaseClient';
 import { BUILD_VERSION } from './version';
 import { FiRefreshCw, FiLogOut } from 'react-icons/fi';
 
+/** Build/version badge with triple-tap hard refresh */
 function BuildTag() {
   const tapsRef = useRef({ count: 0, timer: null });
   const hardRefresh = async () => {
@@ -28,8 +29,14 @@ function BuildTag() {
   const onTap = () => {
     const t = tapsRef.current;
     t.count += 1;
-    if (t.count === 1) t.timer = setTimeout(() => { t.count = 0; t.timer = null; }, 800);
-    if (t.count >= 3) { if (t.timer) clearTimeout(t.timer); t.count = 0; hardRefresh(); }
+    if (t.count === 1) {
+      t.timer = setTimeout(() => { t.count = 0; t.timer = null; }, 800);
+    }
+    if (t.count >= 3) {
+      if (t.timer) { clearTimeout(t.timer); t.timer = null; }
+      t.count = 0;
+      hardRefresh();
+    }
   };
   return (
     <Box
@@ -44,18 +51,31 @@ function BuildTag() {
   );
 }
 
+/** Reusable card section that never overflows horizontally */
+function Section({ title, right, children }) {
+  return (
+    <Box bg="white" p={4} borderRadius="lg" shadow="sm" mb={4} w="100%">
+      <HStack justify="space-between" align="center" mb={2} wrap="wrap" spacing={2}>
+        <Heading size="sm" noOfLines={1}>{title}</Heading>
+        {right}
+      </HStack>
+      <Divider mb={3} />
+      {/* Any wide child (tables) gets its own scroll context */}
+      <Box overflowX="auto" w="100%">
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
 export default function BoardDashboard({ user, onLogout }) {
   const toast = useToast();
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState('all');
   const [windowDays, setWindowDays] = useState('30'); // '7' | '30' | '90' | 'all'
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0,10));
-  const [showAllotted, setShowAllotted] = useState(true);
 
-  const [dailyRows, setDailyRows] = useState([]);        // board_labour_daily
-  const [rollupRows, setRollupRows] = useState([]);      // last30 or client rollup
-  const [breakdownRows, setBreakdownRows] = useState([]); // board_project_day_breakdown (per-project)
-  const [glanceRows, setGlanceRows] = useState([]);      // board_project_day_breakdown (all projects for date)
+  const [dailyRows, setDailyRows] = useState([]);   // board_labour_daily
+  const [rollupRows, setRollupRows] = useState([]); // rollup
 
   useEffect(() => {
     (async () => {
@@ -64,7 +84,6 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, []);
 
-  // Portfolio daily/rollup
   useEffect(() => {
     (async () => {
       const since =
@@ -86,6 +105,7 @@ export default function BoardDashboard({ user, onLogout }) {
         setDailyRows(data || []);
       }
 
+      // rollup
       if (windowDays === '30' && selectedProject === 'all') {
         const { data: r } = await supabase.from('board_labour_last30').select('*').order('project_name');
         setRollupRows(r || []);
@@ -103,51 +123,6 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, [selectedProject, windowDays, toast]);
 
-  // Per-project / per-day breakdown
-  useEffect(() => {
-    (async () => {
-      if (selectedProject === 'all' || !selectedDate) {
-        setBreakdownRows([]);
-        return;
-      }
-      const { data, error } = await supabase
-        .from('board_project_day_breakdown')
-        .select('*')
-        .eq('project_id', selectedProject)
-        .eq('date', selectedDate)
-        .order('team_name', { ascending: true })
-        .order('labour_type_name', { ascending: true });
-      if (error) {
-        toast({ title: 'Breakdown failed', description: error.message, status: 'error' });
-      } else {
-        setBreakdownRows(data || []);
-      }
-    })();
-  }, [selectedProject, selectedDate, toast]);
-
-  // All-projects glance for a given date
-  useEffect(() => {
-    (async () => {
-      if (selectedProject !== 'all' || !selectedDate) {
-        setGlanceRows([]);
-        return;
-      }
-      const { data, error } = await supabase
-        .from('board_project_day_breakdown')
-        .select('*')
-        .eq('date', selectedDate)
-        .order('project_name', { ascending: true })
-        .order('team_name', { ascending: true })
-        .order('labour_type_name', { ascending: true });
-      if (error) {
-        toast({ title: 'Load failed', description: error.message, status: 'error' });
-      } else {
-        setGlanceRows(data || []);
-      }
-    })();
-  }, [selectedProject, selectedDate, toast]);
-
-  // KPI across visible set
   const kpis = useMemo(() => {
     let att = 0, allo = 0;
     for (const r of dailyRows) { att += r.attendance_workers || 0; allo += r.allotted_workers || 0; }
@@ -159,261 +134,111 @@ export default function BoardDashboard({ user, onLogout }) {
     setTimeout(() => setWindowDays('30'), 0);
   };
 
-  // Totals for the per-project insight panel
-  const insightTotals = useMemo(() => {
-    let att = 0, allo = 0;
-    for (const r of breakdownRows) { att += r.attendance_count || 0; allo += r.allotted_count || 0; }
-    return { att, allo, gap: att - allo };
-  }, [breakdownRows]);
-
-  // Group the glance rows by project
-  const glanceByProject = useMemo(() => {
-    const map = new Map();
-    for (const r of glanceRows) {
-      const key = r.project_id + '|' + r.project_name;
-      const arr = map.get(key) || [];
-      arr.push(r);
-      map.set(key, arr);
-    }
-    // Convert to array of { project_id, project_name, rows, totals }
-    return Array.from(map.entries()).map(([k, rows]) => {
-      const [project_id, project_name] = k.split('|');
-      let att = 0, allo = 0;
-      rows.forEach(x => { att += x.attendance_count || 0; allo += x.allotted_count || 0; });
-      return { project_id, project_name, rows, totals: { att, allo, gap: att - allo } };
-    });
-  }, [glanceRows]);
-
   return (
-    <Box>
-      {/* Header */}
-      <HStack justify="space-between" mb={4} wrap="wrap" gap={2}>
-        <Heading size="lg">Board Overview</Heading>
-        <HStack>
-          <Badge colorScheme="purple" variant="subtle">{user?.email}</Badge>
-          <Button size="sm" leftIcon={<Icon as={FiLogOut} />} variant="outline" onClick={onLogout}>Logout</Button>
+    <Box bg="gray.50" minH="100vh" py={8} px={4} overflowX="hidden">
+      <Box maxW="800px" mx="auto" w="100%">
+        {/* Header */}
+        <HStack justify="space-between" mb={4} wrap="wrap" spacing={3}>
+          <Heading size="lg" lineHeight="1.15">Board Overview</Heading>
+          <HStack wrap="wrap" spacing={2}>
+            <Badge colorScheme="purple" variant="subtle" maxW="100%" whiteSpace="normal">
+              {user?.email}
+            </Badge>
+            <Button size="sm" leftIcon={<Icon as={FiLogOut} />} variant="outline" onClick={onLogout}>
+              Logout
+            </Button>
+          </HStack>
         </HStack>
-      </HStack>
 
-      {/* Portfolio controls */}
-      <Stack direction={{ base:'column', md:'row' }} spacing={3} mb={4}>
-        <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
-          <option value="all">All projects</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </Select>
-        <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="all">All time</option>
-        </Select>
-        <Button onClick={refresh} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
-      </Stack>
-
-      {/* Portfolio KPIs */}
-      <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={4}>
-        <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-          <StatLabel>Total attendance</StatLabel>
-          <StatNumber>{kpis.att.toLocaleString()}</StatNumber>
-        </Stat>
-        <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-          <StatLabel>Total allotted</StatLabel>
-          <StatNumber>{kpis.allo.toLocaleString()}</StatNumber>
-        </Stat>
-        <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-          <StatLabel>Gap (attendance − allotted)</StatLabel>
-          <StatNumber>{kpis.gap.toLocaleString()}</StatNumber>
-        </Stat>
-      </SimpleGrid>
-
-      {/* AT-A-GLANCE across ALL projects for a chosen date */}
-      {selectedProject === 'all' && (
-        <Section title="At-a-glance (all projects for date)">
-          <HStack spacing={4} mb={3} wrap="wrap">
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e)=>setSelectedDate(e.target.value)}
-              max={new Date().toISOString().slice(0,10)}
-              w="auto"
-            />
-            <FormControl display="flex" alignItems="center" w="auto">
-              <FormLabel htmlFor="showAllotted" mb="0" fontSize="sm" color="gray.700">
-                Show allotted column
-              </FormLabel>
-              <Switch id="showAllotted" isChecked={showAllotted} onChange={(e)=>setShowAllotted(e.target.checked)} />
-            </FormControl>
-            <Text fontSize="sm" color="gray.600">Team → Type → Count per project in one glance.</Text>
-          </HStack>
-
-          <SimpleGrid columns={{ base:1, md:2 }} spacing={4}>
-            {glanceByProject.map(pj => (
-              <Box key={pj.project_id} bg="white" p={4} borderRadius="lg" shadow="sm">
-                <HStack justify="space-between" mb={2}>
-                  <Heading size="sm">{pj.project_name}</Heading>
-                  <HStack spacing={2}>
-                    <Badge colorScheme="blue">Att: {pj.totals.att}</Badge>
-                    {showAllotted && <Badge colorScheme="purple">Allot: {pj.totals.allo}</Badge>}
-                    <Badge colorScheme={pj.totals.gap >= 0 ? 'green' : 'red'}>
-                      Gap: {pj.totals.gap}
-                    </Badge>
-                  </HStack>
-                </HStack>
-                <Table size="sm" variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Team</Th>
-                      <Th>Type</Th>
-                      <Th isNumeric>Count</Th>
-                      {showAllotted && <Th isNumeric>Allotted</Th>}
-                      <Th isNumeric>Gap</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {pj.rows.map((r, idx) => (
-                      <Tr key={idx}>
-                        <Td>{r.team_name || '—'}</Td>
-                        <Td>{r.labour_type_name || '—'}</Td>
-                        <Td isNumeric>{r.attendance_count || 0}</Td>
-                        {showAllotted && <Td isNumeric>{r.allotted_count || 0}</Td>}
-                        <Td isNumeric>{(r.attendance_count || 0) - (r.allotted_count || 0)}</Td>
-                      </Tr>
-                    ))}
-                    {pj.rows.length === 0 && (
-                      <Tr><Td colSpan={showAllotted ? 5 : 4}><Text fontSize="sm" color="gray.500">No data.</Text></Td></Tr>
-                    )}
-                  </Tbody>
-                </Table>
-              </Box>
-            ))}
-          </SimpleGrid>
+        {/* Controls */}
+        <Section title="Controls">
+          <Stack direction={{ base:'column', md:'row' }} spacing={3} w="100%">
+            <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
+              <option value="all">All projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+            <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="all">All time</option>
+            </Select>
+            <Button onClick={refresh} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
+          </Stack>
         </Section>
-      )}
 
-      {/* Project insight — appears when a single project is selected */}
-      {selectedProject !== 'all' && (
-        <Section title="Project insight (by team & labour type)">
-          <HStack spacing={3} mb={3} wrap="wrap">
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e)=>setSelectedDate(e.target.value)}
-              max={new Date().toISOString().slice(0,10)}
-              w="auto"
-            />
-            <Text fontSize="sm" color="gray.600">Compare attendance vs. allotted for the day.</Text>
-          </HStack>
+        {/* KPIs */}
+        <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={4}>
+          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+            <StatLabel>Total attendance</StatLabel>
+            <StatNumber>{kpis.att.toLocaleString()}</StatNumber>
+          </Stat>
+          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+            <StatLabel>Total allotted</StatLabel>
+            <StatNumber>{kpis.allo.toLocaleString()}</StatNumber>
+          </Stat>
+          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+            <StatLabel>Gap (attendance − allotted)</StatLabel>
+            <StatNumber>{kpis.gap.toLocaleString()}</StatNumber>
+          </Stat>
+        </SimpleGrid>
 
-          <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={3}>
-            <Stat bg="gray.50" p={3} borderRadius="md">
-              <StatLabel>Attendance (total)</StatLabel>
-              <StatNumber>{insightTotals.att.toLocaleString()}</StatNumber>
-            </Stat>
-            <Stat bg="gray.50" p={3} borderRadius="md">
-              <StatLabel>Allotted (total)</StatLabel>
-              <StatNumber>{insightTotals.allo.toLocaleString()}</StatNumber>
-            </Stat>
-            <Stat bg="gray.50" p={3} borderRadius="md">
-              <StatLabel>Gap (att − allot)</StatLabel>
-              <StatNumber>{insightTotals.gap.toLocaleString()}</StatNumber>
-            </Stat>
-          </SimpleGrid>
-
-          <Table size="sm">
+        {/* Project rollup */}
+        <Section title="Project rollup">
+          <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
             <Thead>
               <Tr>
-                <Th>Team</Th>
-                <Th>Type</Th>
+                <Th>Project</Th>
                 <Th isNumeric>Attendance</Th>
                 <Th isNumeric>Allotted</Th>
                 <Th isNumeric>Gap</Th>
               </Tr>
             </Thead>
             <Tbody>
-              {breakdownRows.map((r, i) => (
-                <Tr key={`${r.team_id}-${r.labour_type_id}-${i}`}>
-                  <Td>{r.team_name || '—'}</Td>
-                  <Td>{r.labour_type_name || '—'}</Td>
-                  <Td isNumeric>{r.attendance_count || 0}</Td>
-                  <Td isNumeric>{r.allotted_count || 0}</Td>
-                  <Td isNumeric>{(r.attendance_count || 0) - (r.allotted_count || 0)}</Td>
+              {rollupRows.map(r => (
+                <Tr key={r.project_id}>
+                  <Td whiteSpace="normal" wordBreak="break-word">{r.project_name}</Td>
+                  <Td isNumeric>{Number(r.attendance_30d || 0).toLocaleString()}</Td>
+                  <Td isNumeric>{Number(r.allotted_30d || 0).toLocaleString()}</Td>
+                  <Td isNumeric>{(Number(r.attendance_30d || 0) - Number(r.allotted_30d || 0)).toLocaleString()}</Td>
                 </Tr>
               ))}
-              {breakdownRows.length === 0 && (
-                <Tr><Td colSpan={5}><Text fontSize="sm" color="gray.500">No data for this date.</Text></Td></Tr>
-              )}
             </Tbody>
           </Table>
         </Section>
-      )}
 
-      {/* Per-project rollup for the selected portfolio window */}
-      <Section title="Project rollup">
-        <Table size="sm">
-          <Thead>
-            <Tr>
-              <Th>Project</Th>
-              <Th isNumeric>Attendance</Th>
-              <Th isNumeric>Allotted</Th>
-              <Th isNumeric>Gap</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {rollupRows.map(r => (
-              <Tr key={r.project_id}>
-                <Td>{r.project_name}</Td>
-                <Td isNumeric>{Number(r.attendance_30d || 0).toLocaleString()}</Td>
-                <Td isNumeric>{Number(r.allotted_30d || 0).toLocaleString()}</Td>
-                <Td isNumeric>{(Number(r.attendance_30d || 0) - Number(r.allotted_30d || 0)).toLocaleString()}</Td>
+        {/* Daily detail */}
+        <Section title="Daily detail">
+          <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
+            <Thead>
+              <Tr>
+                <Th>Date</Th>
+                <Th>Project</Th>
+                <Th isNumeric>Attendance</Th>
+                <Th isNumeric>Allotted</Th>
+                <Th isNumeric>Gap</Th>
               </Tr>
-            ))}
-          </Tbody>
-        </Table>
-      </Section>
+            </Thead>
+            <Tbody>
+              {dailyRows.map((r, idx) => (
+                <Tr key={idx}>
+                  <Td>{r.date}</Td>
+                  <Td whiteSpace="normal" wordBreak="break-word">{r.project_name}</Td>
+                  <Td isNumeric>{r.attendance_workers || 0}</Td>
+                  <Td isNumeric>{r.allotted_workers || 0}</Td>
+                  <Td isNumeric>{(r.attendance_workers || 0) - (r.allotted_workers || 0)}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </Section>
 
-      {/* Daily detail for the portfolio window */}
-      <Section title="Daily detail">
-        <Table size="sm">
-          <Thead>
-            <Tr>
-              <Th>Date</Th>
-              <Th>Project</Th>
-              <Th isNumeric>Attendance</Th>
-              <Th isNumeric>Allotted</Th>
-              <Th isNumeric>Gap</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {dailyRows.map((r, idx) => (
-              <Tr key={idx}>
-                <Td>{r.date}</Td>
-                <Td>{r.project_name}</Td>
-                <Td isNumeric>{r.attendance_workers || 0}</Td>
-                <Td isNumeric>{r.allotted_workers || 0}</Td>
-                <Td isNumeric>{(r.attendance_workers || 0) - (r.allotted_workers || 0)}</Td>
-              </Tr>
-            ))}
-          </Tbody>
-        </Table>
-      </Section>
-
-      <Text mt={3} fontSize="xs" color="gray.500">
-        Data is read-only for board users and reflects attendance vs. allocated labour from work reports.
-      </Text>
+        <Text mt={3} fontSize="xs" color="gray.500">
+          Data is read-only for board users and reflects attendance vs. allocated labour from work reports.
+        </Text>
+      </Box>
 
       <BuildTag />
-    </Box>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <Box bg="white" p={4} borderRadius="lg" shadow="sm" mb={4}>
-      <HStack justify="space-between" mb={2}>
-        <Heading size="sm">{title}</Heading>
-      </HStack>
-      <Divider mb={3}/>
-      {children}
     </Box>
   );
 }

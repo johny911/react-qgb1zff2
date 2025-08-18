@@ -1,9 +1,9 @@
 // src/BoardDashboard.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Heading, Text, HStack, VStack, Stack, Select, Button, Badge,
+  Box, Heading, Text, HStack, Stack, Select, Button, Badge,
   SimpleGrid, Stat, StatLabel, StatNumber, Table, Thead, Tbody, Tr, Th, Td,
-  useToast, Icon, Divider
+  useToast, Icon, Divider, Tabs, TabList, TabPanels, Tab, TabPanel
 } from '@chakra-ui/react';
 import { supabase } from './supabaseClient';
 import { BUILD_VERSION } from './version';
@@ -60,7 +60,6 @@ function Section({ title, right, children }) {
         {right}
       </HStack>
       <Divider mb={3} />
-      {/* Any wide child (tables) gets its own scroll context */}
       <Box overflowX="auto" w="100%">
         {children}
       </Box>
@@ -70,13 +69,24 @@ function Section({ title, right, children }) {
 
 export default function BoardDashboard({ user, onLogout }) {
   const toast = useToast();
+
+  // Filters shared
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState('all');
-  const [windowDays, setWindowDays] = useState('30'); // '7' | '30' | '90' | 'all'
 
-  const [dailyRows, setDailyRows] = useState([]);   // board_labour_daily
-  const [rollupRows, setRollupRows] = useState([]); // rollup
+  // Overview filters
+  const [windowDays, setWindowDays] = useState('30'); // 7|30|90|all
 
+  // Breakdown filters
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  // Data
+  const [dailyRows, setDailyRows] = useState([]);    // board_labour_daily
+  const [rollupRows, setRollupRows] = useState([]);  // rollup from dailyRows or view
+  const [breakdownRows, setBreakdownRows] = useState([]); // board_attendance_breakdown for selectedDate
+
+  // Load project list
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from('projects').select('id,name').order('name');
@@ -84,6 +94,7 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, []);
 
+  // -------- Overview data (KPIs + rollup) --------
   useEffect(() => {
     (async () => {
       const since =
@@ -105,7 +116,6 @@ export default function BoardDashboard({ user, onLogout }) {
         setDailyRows(data || []);
       }
 
-      // rollup
       if (windowDays === '30' && selectedProject === 'all') {
         const { data: r } = await supabase.from('board_labour_last30').select('*').order('project_name');
         setRollupRows(r || []);
@@ -123,16 +133,48 @@ export default function BoardDashboard({ user, onLogout }) {
     })();
   }, [selectedProject, windowDays, toast]);
 
+  // -------- Breakdown data (Team -> Type -> Count for a date) --------
+  useEffect(() => {
+    (async () => {
+      let q = supabase.from('board_attendance_breakdown').select('*').eq('date', selectedDate);
+      if (selectedProject !== 'all') q = q.eq('project_id', selectedProject);
+      q = q.order('project_name').order('team_name').order('type_name');
+      const { data, error } = await q;
+      if (error) {
+        toast({ title: 'Load failed', description: error.message, status: 'error' });
+      } else {
+        setBreakdownRows(data || []);
+      }
+    })();
+  }, [selectedDate, selectedProject, toast]);
+
+  // KPIs for overview
   const kpis = useMemo(() => {
     let att = 0, allo = 0;
     for (const r of dailyRows) { att += r.attendance_workers || 0; allo += r.allotted_workers || 0; }
     return { att, allo, gap: att - allo };
   }, [dailyRows]);
 
-  const refresh = () => {
+  const refreshOverview = () => {
     setWindowDays(prev => prev === '30' ? '29' : '30');
     setTimeout(() => setWindowDays('30'), 0);
   };
+
+  // Group breakdown by project for card rendering
+  const groupedByProject = useMemo(() => {
+    const map = new Map();
+    for (const r of breakdownRows) {
+      if (!map.has(r.project_id)) {
+        map.set(r.project_id, { name: r.project_name, rows: [], total: 0 });
+      }
+      const bucket = map.get(r.project_id);
+      bucket.rows.push(r);
+      bucket.total += Number(r.count || 0);
+    }
+    return Array.from(map.entries())
+      .map(([project_id, v]) => ({ project_id, ...v }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [breakdownRows]);
 
   return (
     <Box bg="gray.50" minH="100vh" py={8} px={4} overflowX="hidden">
@@ -150,91 +192,136 @@ export default function BoardDashboard({ user, onLogout }) {
           </HStack>
         </HStack>
 
-        {/* Controls */}
-        <Section title="Controls">
-          <Stack direction={{ base:'column', md:'row' }} spacing={3} w="100%">
-            <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
-              <option value="all">All projects</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </Select>
-            <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="all">All time</option>
-            </Select>
-            <Button onClick={refresh} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
-          </Stack>
-        </Section>
+        <Tabs colorScheme="brand" variant="enclosed">
+          <TabList overflowX="auto">
+            <Tab>Overview</Tab>
+            <Tab>Attendance at a glance</Tab>
+          </TabList>
 
-        {/* KPIs */}
-        <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={4}>
-          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-            <StatLabel>Total attendance</StatLabel>
-            <StatNumber>{kpis.att.toLocaleString()}</StatNumber>
-          </Stat>
-          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-            <StatLabel>Total allotted</StatLabel>
-            <StatNumber>{kpis.allo.toLocaleString()}</StatNumber>
-          </Stat>
-          <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
-            <StatLabel>Gap (attendance − allotted)</StatLabel>
-            <StatNumber>{kpis.gap.toLocaleString()}</StatNumber>
-          </Stat>
-        </SimpleGrid>
+          <TabPanels>
+            {/* -------- OVERVIEW TAB -------- */}
+            <TabPanel px={0}>
+              <Section title="Controls">
+                <Stack direction={{ base:'column', md:'row' }} spacing={3} w="100%">
+                  <Select value={selectedProject} onChange={(e)=>setSelectedProject(e.target.value)}>
+                    <option value="all">All projects</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </Select>
+                  <Select value={windowDays} onChange={(e)=>setWindowDays(e.target.value)}>
+                    <option value="7">Last 7 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="all">All time</option>
+                  </Select>
+                  <Button onClick={refreshOverview} leftIcon={<Icon as={FiRefreshCw} />}>Refresh</Button>
+                </Stack>
 
-        {/* Project rollup */}
-        <Section title="Project rollup">
-          <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
-            <Thead>
-              <Tr>
-                <Th>Project</Th>
-                <Th isNumeric>Attendance</Th>
-                <Th isNumeric>Allotted</Th>
-                <Th isNumeric>Gap</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {rollupRows.map(r => (
-                <Tr key={r.project_id}>
-                  <Td whiteSpace="normal" wordBreak="break-word">{r.project_name}</Td>
-                  <Td isNumeric>{Number(r.attendance_30d || 0).toLocaleString()}</Td>
-                  <Td isNumeric>{Number(r.allotted_30d || 0).toLocaleString()}</Td>
-                  <Td isNumeric>{(Number(r.attendance_30d || 0) - Number(r.allotted_30d || 0)).toLocaleString()}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Section>
+                {/* Quick date controls (requested placement: below the dropdowns) */}
+                <HStack mt={3} spacing={3} wrap="wrap">
+                  <Button size="sm" onClick={() => setSelectedDate(todayStr)}>Today</Button>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={{
+                      height: '36px',
+                      padding: '6px 10px',
+                      border: '1px solid var(--chakra-colors-gray-200)',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Text fontSize="sm" color="gray.500">Used by the “Attendance at a glance” tab.</Text>
+                </HStack>
+              </Section>
 
-        {/* Daily detail */}
-        <Section title="Daily detail">
-          <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
-            <Thead>
-              <Tr>
-                <Th>Date</Th>
-                <Th>Project</Th>
-                <Th isNumeric>Attendance</Th>
-                <Th isNumeric>Allotted</Th>
-                <Th isNumeric>Gap</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {dailyRows.map((r, idx) => (
-                <Tr key={idx}>
-                  <Td>{r.date}</Td>
-                  <Td whiteSpace="normal" wordBreak="break-word">{r.project_name}</Td>
-                  <Td isNumeric>{r.attendance_workers || 0}</Td>
-                  <Td isNumeric>{r.allotted_workers || 0}</Td>
-                  <Td isNumeric>{(r.attendance_workers || 0) - (r.allotted_workers || 0)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Section>
+              {/* KPIs */}
+              <SimpleGrid columns={{ base:1, sm:3 }} spacing={3} mb={4}>
+                <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+                  <StatLabel>Total attendance</StatLabel>
+                  <StatNumber>{kpis.att.toLocaleString()}</StatNumber>
+                </Stat>
+                <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+                  <StatLabel>Total allotted</StatLabel>
+                  <StatNumber>{kpis.allo.toLocaleString()}</StatNumber>
+                </Stat>
+                <Stat bg="white" p={4} borderRadius="lg" shadow="sm">
+                  <StatLabel>Gap (attendance − allotted)</StatLabel>
+                  <StatNumber>{kpis.gap.toLocaleString()}</StatNumber>
+                </Stat>
+              </SimpleGrid>
+
+              {/* Project rollup */}
+              <Section title="Project rollup">
+                <Table size="sm" variant="simple" width="100%" tableLayout="fixed">
+                  <Thead>
+                    <Tr>
+                      <Th>Project</Th>
+                      <Th isNumeric>Attendance</Th>
+                      <Th isNumeric>Allotted</Th>
+                      <Th isNumeric>Gap</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {rollupRows.map(r => (
+                      <Tr key={r.project_id}>
+                        <Td whiteSpace="normal" wordBreak="break-word">{r.project_name}</Td>
+                        <Td isNumeric>{Number(r.attendance_30d || 0).toLocaleString()}</Td>
+                        <Td isNumeric>{Number(r.allotted_30d || 0).toLocaleString()}</Td>
+                        <Td isNumeric>{(Number(r.attendance_30d || 0) - Number(r.allotted_30d || 0)).toLocaleString()}</Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </Section>
+            </TabPanel>
+
+            {/* -------- ATTENDANCE AT A GLANCE TAB -------- */}
+            <TabPanel px={0}>
+              <Section
+                title={`At-a-glance (all projects for ${selectedDate})`}
+                right={<Badge colorScheme="blue">Team → Type → Count</Badge>}
+              >
+                {groupedByProject.length === 0 ? (
+                  <Text color="gray.500" fontSize="sm">No attendance for this date.</Text>
+                ) : (
+                  <Stack spacing={4}>
+                    {groupedByProject.map(p => (
+                      <Box key={p.project_id} p={3} border="1px solid" borderColor="gray.200" borderRadius="lg">
+                        <HStack justify="space-between" mb={2} wrap="wrap">
+                          <Heading size="sm" whiteSpace="normal">{p.name}</Heading>
+                          <Badge colorScheme="blue">Total: {p.total}</Badge>
+                        </HStack>
+                        <Box overflowX="auto">
+                          <Table size="sm" width="100%" tableLayout="fixed">
+                            <Thead>
+                              <Tr>
+                                <Th>Team</Th>
+                                <Th>Type</Th>
+                                <Th isNumeric>Count</Th>
+                              </Tr>
+                            </Thead>
+                            <Tbody>
+                              {p.rows.map((r, i) => (
+                                <Tr key={i}>
+                                  <Td whiteSpace="normal" wordBreak="break-word">{r.team_name || '—'}</Td>
+                                  <Td whiteSpace="normal" wordBreak="break-word">{r.type_name || '—'}</Td>
+                                  <Td isNumeric>{r.count || 0}</Td>
+                                </Tr>
+                              ))}
+                            </Tbody>
+                          </Table>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Section>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
 
         <Text mt={3} fontSize="xs" color="gray.500">
-          Data is read-only for board users and reflects attendance vs. allocated labour from work reports.
+          Data is read-only for board users. “At-a-glance” shows attendance captured by engineers for the chosen date.
         </Text>
       </Box>
 

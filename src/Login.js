@@ -261,7 +261,7 @@ export default function Login({ setUser }) {
 
           <Divider />
           <Text fontSize="xs" color="gray.500" textAlign="center">
-            By continuing you agree to the Terms and acknowledge the Privacy Policy.
+            By continuing you agree to the Terms and acknowledge the Privacy Policy. [development-build]
           </Text>
         </VStack>
       </Box>

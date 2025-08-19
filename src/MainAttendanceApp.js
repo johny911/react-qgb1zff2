@@ -201,7 +201,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
     // refresh again after a short delay (helps on cold offline cache)
     const t = setTimeout(() => fetchReferenceData({ force: true }), 250)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // when tab/app becomes visible again, refresh if data is missing
@@ -259,7 +258,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
       setShowPreview(false)
     })()
-  }, [projectId, date]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, date])
 
   // persist drafts on background/unload
   useEffect(() => {

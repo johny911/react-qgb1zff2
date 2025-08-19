@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Box } from '@chakra-ui/react';
 import SignIn from './auth/SignIn';
 import SignUp from './auth/SignUp';
-import ResetPassword from './ResetPassword';
+import ResetPassword from './auth/ResetPassword';
 
 export default function Auth({ setUser }) {
   const [screen, setScreen] = useState('signin'); // 'signin' | 'signup' | 'reset'

@@ -8,7 +8,7 @@ import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
 import BoardDashboard from './BoardDashboard';
 import UpdateBanner from './components/UpdateBanner';
-import ResetPassword from './ResetPassword';
+import ResetPassword from './auth/ResetPassword';
 
 export default function App() {
   const [user, setUser]       = useState(null);

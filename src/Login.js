@@ -29,6 +29,8 @@ export default function Login({ setUser }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');   // NEW
+  const [lastName, setLastName] = useState('');     // NEW
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -40,28 +42,94 @@ export default function Login({ setUser }) {
     setMessage('');
   };
 
+  // Ensure public.users has a row for this auth user (and keep the name fresh)
+  const ensureProfileRow = async (authUser) => {
+    if (!authUser) return;
+
+    const metaFirst = authUser.user_metadata?.first_name || '';
+    const metaLast  = authUser.user_metadata?.last_name || '';
+    const fullName  = [metaFirst, metaLast].filter(Boolean).join(' ').trim() || null;
+
+    // Try to fetch an existing row
+    const { data: existing, error: fetchErr } = await supabase
+      .from('users')
+      .select('id, name, role')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (fetchErr) {
+      // Non-blocking for login; just surface a banner
+      setMessage('Logged in, but profile sync had a small hiccup.');
+      return;
+    }
+
+    if (!existing) {
+      // Insert with a sensible default role; adjust if you prefer a different default
+      await supabase.from('users').insert({
+        id: authUser.id,
+        email: authUser.email,
+        name: fullName,
+        role: 'engineer',
+      });
+    } else {
+      // Keep email + name up-to-date (do not touch role here)
+      const updates = {};
+      if (authUser.email && authUser.email !== existing.email) updates.email = authUser.email;
+      if (fullName && fullName !== existing.name) updates.name = fullName;
+      if (Object.keys(updates).length) {
+        await supabase.from('users').update(updates).eq('id', authUser.id);
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     clearBanners();
 
-    if (!email || (mode !== 'forgot' && !password)) {
+    const needPw = mode !== 'forgot';
+    if (!email || (needPw && !password)) {
       setError('Please fill in all required fields.');
+      return;
+    }
+
+    if (mode === 'register' && (!firstName.trim() || !lastName.trim())) {
+      setError('Please enter your first and last name.');
       return;
     }
 
     setLoading(true);
     try {
       if (mode === 'login') {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setError(error.message);
+        } else {
+          // Make sure profile exists/updated, then pass user upward
+          await ensureProfileRow(data.user);
+          setUser(data.user);
+        }
+      } else if (mode === 'register') {
+        // Pass name into user_metadata so we can greet them later
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+            },
+          },
         });
-        if (error) setError(error.message);
-        else setUser(data.user);
-      } else if (mode === 'register') {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) setError(error.message);
-        else setMessage('Registration email sent! Check your inbox.');
+
+        if (error) {
+          setError(error.message);
+        } else {
+          // If email confirmation is OFF, a session may already exist => upsert now
+          if (data?.user) {
+            await ensureProfileRow(data.user);
+          }
+          setMessage('Registration email sent! Check your inbox to confirm your account.');
+        }
       } else if (mode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/reset-password`,
@@ -110,6 +178,30 @@ export default function Login({ setUser }) {
         </InputRightElement>
       </InputGroup>
     </FormControl>
+  );
+
+  // First/Last name inputs (register only)
+  const NameInputs = (
+    <>
+      <FormControl isRequired>
+        <FormLabel mb={1}>First name</FormLabel>
+        <Input
+          placeholder="Johny"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          bg="white"
+        />
+      </FormControl>
+      <FormControl isRequired>
+        <FormLabel mb={1}>Last name</FormLabel>
+        <Input
+          placeholder="Abraham"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          bg="white"
+        />
+      </FormControl>
+    </>
   );
 
   return (
@@ -208,6 +300,7 @@ export default function Login({ setUser }) {
                 <TabPanel px={0}>
                   <form onSubmit={handleSubmit}>
                     <VStack align="stretch" spacing={3}>
+                      {NameInputs}
                       {EmailInput}
                       {PasswordInput}
                       <Button

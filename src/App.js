@@ -165,9 +165,10 @@ export default function App() {
       const ensuredRole = await withRetry(() => ensureProfile(u), { retries: 2, delay: 250 });
       const freshRole   = await withRetry(() => fetchRoleOnce(u.id), { retries: 2, delay: 250 });
 
-      const finalRole = freshRole || ensuredRole || null;
+      // *** CHANGE: default to 'engineer' if missing so user is never locked out ***
+      const finalRole = freshRole || ensuredRole || 'engineer';
       setRole(finalRole);
-      writeCachedRole(u.id, finalRole || '');
+      writeCachedRole(u.id, finalRole);
       setVerifying(false);
     } catch (err) {
       setSoftError(err?.message || 'Failed to initialize.');
@@ -198,8 +199,10 @@ export default function App() {
       // Re-check role after meaningful auth state changes
       try {
         const freshRole = await withRetry(() => fetchRoleOnce(u.id), { retries: 2, delay: 250 });
-        setRole(freshRole);
-        writeCachedRole(u.id, freshRole || '');
+        // *** CHANGE: safe fallback to 'engineer' here as well ***
+        const safeRole = freshRole || 'engineer';
+        setRole(safeRole);
+        writeCachedRole(u.id, safeRole);
       } catch (e) {
         setSoftError(e?.message || 'Role check failed.');
       } finally {

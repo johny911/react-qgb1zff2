@@ -6,19 +6,39 @@ import { supabase } from './supabaseClient';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
-import BoardDashboard from './BoardDashboard';        // ✅ NEW: board view
-import UpdateBanner from './components/UpdateBanner'; // shows toast when new SW is available
+import BoardDashboard from './BoardDashboard';
+import UpdateBanner from './components/UpdateBanner';
+import ResetPassword from './ResetPassword';
 
 export default function App() {
   const [user, setUser]       = useState(null);
   const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Is the current URL the password reset page?
+  const isResetRoute =
+    typeof window !== 'undefined' &&
+    window.location.pathname === '/reset-password';
+
   useEffect(() => {
     const getSessionAndUser = async () => {
+      // 1) If the Supabase email link includes a `code` param (PKCE),
+      //    exchange it for a session so the reset screen has auth.
+      try {
+        const url = new URL(window.location.href);
+        const hasCode = url.searchParams.get('code');
+        if (hasCode) {
+          await supabase.auth.exchangeCodeForSession();
+        }
+      } catch (_) {
+        // ignore — safe no-op if param isn't present
+      }
+
+      // 2) Now read the session
       const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user || null;
       setUser(currentUser);
+
       if (currentUser) {
         await fetchUserRole(currentUser.id);
       } else {
@@ -29,11 +49,11 @@ export default function App() {
     getSessionAndUser();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      async (_event, session) => {
         const currentUser = session?.user || null;
         setUser(currentUser);
         if (currentUser) {
-          fetchUserRole(currentUser.id);
+          await fetchUserRole(currentUser.id);
         } else {
           setRole(null);
           setLoading(false);
@@ -74,11 +94,28 @@ export default function App() {
     );
   }
 
+  // Show the password reset screen whenever the route is /reset-password,
+  // regardless of login state or role.
+  if (isResetRoute) {
+    return (
+      <Box
+        minH="100vh"
+        bg="background"
+        px={{ base: 4, md: 6 }}
+        py={{ base: 6, md: 10 }}
+      >
+        <Box maxW="560px" mx="auto">
+          <ResetPassword />
+        </Box>
+      </Box>
+    );
+  }
+
   if (!user) {
     return <Login setUser={setUser} />;
   }
 
-  // Minimal shell (no header, no nav) — Apple-style canvas
+  // Minimal shell (no header, no nav)
   const AppShell = ({ children }) => (
     <Box
       minH="100vh"

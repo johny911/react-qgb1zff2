@@ -7,7 +7,7 @@ import SignIn from './auth/SignIn';
 import AdminDashboard from './AdminDashboard';
 import MainAttendanceApp from './MainAttendanceApp';
 import BoardDashboard from './BoardDashboard';
-import ResetPassword from './ResetPassword';
+import ResetPassword from './auth/ResetPassword';
 import UpdateBanner from './components/UpdateBanner';
 
 const SAFETY_TIMEOUT_MS = 6000;

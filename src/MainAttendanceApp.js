@@ -142,6 +142,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
   const [types, setTypes] = useState({})
   const [refLoading, setRefLoading] = useState(false)
   const [refError, setRefError] = useState('')
+  const lastRefetchAt = useRef(0) // debounce for focus/online events
 
   // attendance state
   const [attendanceExists, setAttendanceExists] = useState(false)
@@ -198,24 +199,40 @@ export default function MainAttendanceApp({ user, onLogout }) {
   // mount: load from cache instantly, then refresh in background
   useEffect(() => {
     fetchReferenceData({ force: false })
-    // refresh again after a short delay (helps on cold offline cache)
     const t = setTimeout(() => fetchReferenceData({ force: true }), 250)
     return () => clearTimeout(t)
   }, [])
 
-  // when tab/app becomes visible again, refresh if data is missing
+  // when app regains focus / becomes visible / gets online, refresh (debounced)
   useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'visible') {
-        const need =
-          (projects?.length || 0) === 0 ||
-          (teams?.length || 0) === 0 ||
-          (Object.keys(types || {}).length || 0) === 0
-        if (need && !refLoading) fetchReferenceData({ force: true })
-      }
+    const debouncedHardRefetch = () => {
+      const now = Date.now()
+      if (now - lastRefetchAt.current < 1500) return // debounce to 1.5s
+      lastRefetchAt.current = now
+      fetchReferenceData({ force: true })
     }
-    document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
+
+    const refetchIfMissing = () => {
+      const need =
+        (projects?.length || 0) === 0 ||
+        (teams?.length || 0) === 0 ||
+        (Object.keys(types || {}).length || 0) === 0
+      if (need && !refLoading) debouncedHardRefetch()
+    }
+
+    const onFocus = () => refetchIfMissing()
+    const onVisible = () => { if (document.visibilityState === 'visible') refetchIfMissing() }
+    const onOnline = () => debouncedHardRefetch()
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', onOnline)
+    }
   }, [projects, teams, types, refLoading])
 
   // attendance loader for (project, date)
@@ -225,12 +242,15 @@ export default function MainAttendanceApp({ user, onLogout }) {
       setEditMode(true)
       return
     }
+    let cancelled = false
     ;(async () => {
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
         .eq('project_id', projectId)
         .eq('date', date)
+
+      if (cancelled) return
 
       if (error) {
         console.error('attendance fetch error:', error.message)
@@ -258,6 +278,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
       setShowPreview(false)
     })()
+    return () => { cancelled = true }
   }, [projectId, date])
 
   // persist drafts on background/unload
@@ -432,7 +453,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
             <Select
-              placeholder={refLoading ? 'Loading projects…' : 'Select Project'}
+              placeholder={
+                refLoading
+                  ? 'Loading projects…'
+                  : (projects?.length || 0) === 0
+                    ? 'No projects'
+                    : 'Select Project'
+              }
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
               isDisabled={refLoading || (projects?.length || 0) === 0}
@@ -502,7 +529,13 @@ export default function MainAttendanceApp({ user, onLogout }) {
                   <Text fontSize="sm" color="textMuted" mb={1}>Project</Text>
                   <HStack>
                     <Select
-                      placeholder={refLoading ? 'Loading projects…' : 'Select Project'}
+                      placeholder={
+                        refLoading
+                          ? 'Loading projects…'
+                          : (projects?.length || 0) === 0
+                            ? 'No projects'
+                            : 'Select Project'
+                      }
                       value={projectId}
                       onChange={(e) => setProjectId(e.target.value)}
                       isDisabled={!editMode || refLoading || (projects?.length || 0) === 0}
@@ -554,7 +587,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
                       <Box>
                         <Text fontSize="sm" color="textMuted" mb={1}>Team</Text>
                         <Select
-                          placeholder={refLoading ? 'Loading teams…' : 'Select Team'}
+                          placeholder={refLoading ? 'Loading teams…' : (teams?.length || 0) === 0 ? 'No teams' : 'Select Team'}
                           value={r.teamId}
                           onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
                           isDisabled={!editMode || refLoading || (teams?.length || 0) === 0}

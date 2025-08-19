@@ -18,7 +18,10 @@ import {
   NumberIncrementStepper,
   NumberDecrementStepper,
   useToast,
+  HStack,
+  Icon,
 } from '@chakra-ui/react'
+import { FiRefreshCcw } from 'react-icons/fi'
 import { supabase } from './supabaseClient'
 import WorkReport from './WorkReport'
 import ViewWorkReports from './ViewWorkReports'
@@ -27,9 +30,9 @@ import 'jspdf-autotable'
 import usePersistedState from './hooks/usePersistedState'
 import { BUILD_VERSION } from './version'
 
+// Build/version badge with triple-tap hard refresh
 function BuildTag() {
   const tapsRef = useRef({ count: 0, timer: null })
-
   const hardRefresh = async () => {
     try {
       if ('serviceWorker' in navigator) {
@@ -49,26 +52,18 @@ function BuildTag() {
       window.location.replace(window.location.href.split('#')[0])
     }
   }
-
   const onTap = () => {
     const t = tapsRef.current
     t.count += 1
     if (t.count === 1) {
-      t.timer = setTimeout(() => {
-        t.count = 0
-        t.timer = null
-      }, 800)
+      t.timer = setTimeout(() => { t.count = 0; t.timer = null }, 800)
     }
     if (t.count >= 3) {
-      if (t.timer) {
-        clearTimeout(t.timer)
-        t.timer = null
-      }
+      if (t.timer) { clearTimeout(t.timer); t.timer = null }
       t.count = 0
       hardRefresh()
     }
   }
-
   const label = BUILD_VERSION || 'dev'
   return (
     <Box
@@ -96,66 +91,135 @@ function BuildTag() {
   )
 }
 
+// simple helpers
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+async function withRetry(fn, { retries = 2, delay = 300, factor = 2 } = {}) {
+  let last
+  for (let i = 0; i <= retries; i += 1) {
+    try { return await fn() } catch (e) { last = e }
+    await sleep(delay); delay *= factor
+  }
+  throw last
+}
+
+const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+const cacheKey = (name, userId) => `ref:${name}:${userId || 'anon'}`
+
+function loadCache(name, userId) {
+  try {
+    const raw = localStorage.getItem(cacheKey(name, userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || !parsed.ts || !parsed.data) return null
+    if (Date.now() - parsed.ts > CACHE_TTL_MS) return null
+    return parsed.data
+  } catch { return null }
+}
+function saveCache(name, userId, data) {
+  try {
+    localStorage.setItem(
+      cacheKey(name, userId),
+      JSON.stringify({ ts: Date.now(), data })
+    )
+  } catch {}
+}
+
 export default function MainAttendanceApp({ user, onLogout }) {
   const toast = useToast()
   const userKey = user?.id || 'anon'
   const today = new Date().toISOString().split('T')[0]
+
+  // persisted UI
   const [screen, setScreen] = usePersistedState(`ui:screen:${userKey}`, 'home')
   const [projectId, setProjectId] = usePersistedState(`ui:project:${userKey}`, '')
   const [date, setDate] = usePersistedState(`ui:date:${userKey}`, today)
   const rowsKey = `att:rows:${userKey}:${projectId || 'no-project'}:${date || 'no-date'}`
   const [rows, setRows] = usePersistedState(rowsKey, [{ teamId: '', typeId: '', count: '' }])
+
+  // reference data + status
   const [projects, setProjects] = useState([])
   const [teams, setTeams] = useState([])
   const [types, setTypes] = useState({})
+  const [refLoading, setRefLoading] = useState(false)
+  const [refError, setRefError] = useState('')
+
+  // attendance state
   const [attendanceExists, setAttendanceExists] = useState(false)
   const [editMode, setEditMode] = useState(true)
   const [showPreview, setShowPreview] = useState(false)
   const [viewResults, setViewResults] = useState([])
   const isEditing = attendanceExists
 
-  // NEW: friendly display name (DB -> metadata -> email prefix)
-  const [displayName, setDisplayName] = useState('')
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      try {
-        const { data } = await supabase
-          .from('users')
-          .select('name, email')
-          .eq('id', user.id)
-          .single()
+  // --- Resilient fetch for reference lists ---
+  const fetchReferenceData = async ({ force = false } = {}) => {
+    setRefError('')
+    if (!force) {
+      // warm start from cache for instant dropdown
+      const cp = loadCache('projects', userKey)
+      const ct = loadCache('teams', userKey)
+      const cty = loadCache('types', userKey)
+      if (cp && (!projects || projects.length === 0)) setProjects(cp)
+      if (ct && (!teams || teams.length === 0)) setTeams(ct)
+      if (cty && (!types || Object.keys(types).length === 0)) setTypes(cty)
+    }
 
-        const nameFromDb = data?.name?.trim()
-        const nameFromMeta = user?.user_metadata?.name?.trim()
-        const fallback = user?.email?.split('@')[0] || 'there'
-        const finalName = nameFromDb || nameFromMeta || fallback
+    setRefLoading(true)
+    try {
+      const [{ data: p }, { data: t }, { data: ty }] = await withRetry(
+        () => Promise.all([
+          supabase.from('projects').select('id,name').order('name'),
+          supabase.from('labour_teams').select('id,name').order('name'),
+          supabase.from('labour_types').select('id,team_id,type_name').order('team_id').order('type_name'),
+        ]),
+        { retries: 2, delay: 300 }
+      )
 
-        if (alive) setDisplayName(finalName)
-      } catch {
-        const fallback = user?.email?.split('@')[0] || 'there'
-        if (alive) setDisplayName(fallback)
-      }
-    })()
-    return () => { alive = false }
-  }, [user?.id]) 
-
-  useEffect(() => {
-    ;(async () => {
-      const { data: p } = await supabase.from('projects').select('id,name')
-      const { data: t } = await supabase.from('labour_teams').select('id,name')
-      const { data: ty } = await supabase.from('labour_types').select('id,team_id,type_name')
-      const map = {}
+      const typeMap = {}
       ;(ty || []).forEach((x) => {
-        map[x.team_id] = map[x.team_id] || []
-        map[x.team_id].push(x)
+        typeMap[x.team_id] = typeMap[x.team_id] || []
+        typeMap[x.team_id].push(x)
       })
+
       setProjects(p || [])
       setTeams(t || [])
-      setTypes(map)
-    })()
+      setTypes(typeMap)
+
+      saveCache('projects', userKey, p || [])
+      saveCache('teams', userKey, t || [])
+      saveCache('types', userKey, typeMap)
+    } catch (e) {
+      setRefError(e?.message || 'Failed to load lists')
+      // keep whatever we had (cache or previous)
+    } finally {
+      setRefLoading(false)
+    }
+  }
+
+  // mount: load from cache instantly, then refresh in background
+  useEffect(() => {
+    fetchReferenceData({ force: false })
+    // refresh again after a short delay (helps on cold offline cache)
+    const t = setTimeout(() => fetchReferenceData({ force: true }), 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // when tab/app becomes visible again, refresh if data is missing
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        const need =
+          (projects?.length || 0) === 0 ||
+          (teams?.length || 0) === 0 ||
+          (Object.keys(types || {}).length || 0) === 0
+        if (need && !refLoading) fetchReferenceData({ force: true })
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [projects, teams, types, refLoading])
+
+  // attendance loader for (project, date)
   useEffect(() => {
     if (!projectId || !date) {
       setAttendanceExists(false)
@@ -195,8 +259,9 @@ export default function MainAttendanceApp({ user, onLogout }) {
       }
       setShowPreview(false)
     })()
-  }, [projectId, date])
+  }, [projectId, date]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // persist drafts on background/unload
   useEffect(() => {
     const save = () => {
       try {
@@ -218,25 +283,24 @@ export default function MainAttendanceApp({ user, onLogout }) {
     }
   }, [rowsKey, rows, screen, projectId, date, userKey])
 
+  // helpers
   const totalCount = rows.reduce((sum, r) => sum + (parseInt(r.count || '0', 10) || 0), 0)
   const isRowValid = (r) =>
     r.teamId && r.typeId && r.count && !Number.isNaN(parseInt(r.count, 10)) && parseInt(r.count, 10) > 0
   const canSave = () => projectId && date && rows.length > 0 && rows.every(isRowValid)
 
+  // handlers
   const handleRowChange = (i, field, value) => {
     const copy = [...rows]
     copy[i][field] = value
     if (field === 'teamId') copy[i].typeId = ''
     setRows(copy)
   }
-
   const handleRowCount = (i, value) => {
     const val = String(value ?? '').replace(/[^\d]/g, '')
     handleRowChange(i, 'count', val)
   }
-
   const addRow = () => setRows([...rows, { teamId: '', typeId: '', count: '' }])
-
   const deleteRow = (i) => {
     const copy = [...rows]
     copy.splice(i, 1)
@@ -254,7 +318,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
       })
       return
     }
-
     const del = await supabase
       .from('attendance')
       .delete()
@@ -264,7 +327,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
       toast({ title: 'Save failed (delete)', description: del.error.message, status: 'error' })
       return
     }
-
     const payload = rows.map((r) => ({
       project_id: projectId,
       date,
@@ -277,7 +339,6 @@ export default function MainAttendanceApp({ user, onLogout }) {
       toast({ title: 'Save failed (insert)', description: ins.error.message, status: 'error' })
       return
     }
-
     toast({
       title: isEditing ? 'Attendance updated' : 'Attendance saved',
       description: `${totalCount} entries for ${date}.`,
@@ -323,6 +384,11 @@ export default function MainAttendanceApp({ user, onLogout }) {
     doc.save(`Attendance-${projectName}-${date}.pdf`)
   }
 
+  // user display name (first + last if available)
+  const first = user?.user_metadata?.first_name || ''
+  const last = user?.user_metadata?.last_name || ''
+  const displayName = [first, last].filter(Boolean).join(' ') || (user?.email?.split('@')[0] || 'User')
+
   return (
     <Box bg="gray.50" minH="100vh" py={8} px={4} display="flex" alignItems="flex-start">
       <Box
@@ -334,6 +400,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
         borderRadius="2xl"
         shadow="md"
       >
+        {/* HOME */}
         {screen === 'home' && (
           <Stack spacing={5}>
             <Heading size="sm">👋 Welcome, {displayName}</Heading>
@@ -361,13 +428,15 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* VIEW */}
         {screen === 'view' && (
           <Stack spacing={4}>
             <Heading size="sm">View Attendance</Heading>
             <Select
-              placeholder="Select Project"
+              placeholder={refLoading ? 'Loading projects…' : 'Select Project'}
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
+              isDisabled={refLoading || (projects?.length || 0) === 0}
             >
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -375,10 +444,31 @@ export default function MainAttendanceApp({ user, onLogout }) {
                 </option>
               ))}
             </Select>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+
+            {/* quick tiny control row */}
+            <HStack justify="space-between">
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Button
+                size="sm"
+                leftIcon={<Icon as={FiRefreshCcw} />}
+                variant="ghost"
+                onClick={() => fetchReferenceData({ force: true })}
+                isLoading={refLoading}
+              >
+                Reload
+              </Button>
+            </HStack>
+
+            {refError && (
+              <Text color="red.500" fontSize="sm">
+                {refError}
+              </Text>
+            )}
+
             <Button colorScheme="blue" onClick={fetchAttendance}>
               View
             </Button>
+
             <Stack pt={2} spacing={2}>
               {viewResults.map((r, i) => (
                 <Text key={i}>
@@ -397,6 +487,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* ENTER */}
         {screen === 'enter' && (
           <Stack spacing={5}>
             <Flex align="center" justify="space-between">
@@ -410,16 +501,29 @@ export default function MainAttendanceApp({ user, onLogout }) {
               <Stack spacing={3}>
                 <Box>
                   <Text fontSize="sm" color="textMuted" mb={1}>Project</Text>
-                  <Select
-                    placeholder="Select Project"
-                    value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
-                    isDisabled={!editMode}
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </Select>
+                  <HStack>
+                    <Select
+                      placeholder={refLoading ? 'Loading projects…' : 'Select Project'}
+                      value={projectId}
+                      onChange={(e) => setProjectId(e.target.value)}
+                      isDisabled={!editMode || refLoading || (projects?.length || 0) === 0}
+                    >
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </Select>
+                    <Button
+                      size="sm"
+                      leftIcon={<Icon as={FiRefreshCcw} />}
+                      variant="ghost"
+                      onClick={() => fetchReferenceData({ force: true })}
+                      isLoading={refLoading}
+                      aria-label="Reload lists"
+                    >
+                      Reload
+                    </Button>
+                  </HStack>
+                  {refError && <Text color="red.500" fontSize="xs" mt={1}>{refError}</Text>}
                 </Box>
 
                 <Box>
@@ -451,10 +555,10 @@ export default function MainAttendanceApp({ user, onLogout }) {
                       <Box>
                         <Text fontSize="sm" color="textMuted" mb={1}>Team</Text>
                         <Select
-                          placeholder="Select Team"
+                          placeholder={refLoading ? 'Loading teams…' : 'Select Team'}
                           value={r.teamId}
                           onChange={(e) => handleRowChange(i, 'teamId', e.target.value)}
-                          isDisabled={!editMode}
+                          isDisabled={!editMode || refLoading || (teams?.length || 0) === 0}
                         >
                           {teams.map((t) => (
                             <option key={t.id} value={t.id}>{t.name}</option>
@@ -558,8 +662,11 @@ export default function MainAttendanceApp({ user, onLogout }) {
           </Stack>
         )}
 
+        {/* WORK / VIEW-WORK */}
         {screen === 'work' && <WorkReport onBack={() => setScreen('home')} />}
-        {screen === 'view-work' && <ViewWorkReports onBack={() => setScreen('home')} />}
+        {screen === 'view-work' && (
+          <ViewWorkReports onBack={() => setScreen('home')} />
+        )}
       </Box>
 
       <BuildTag />

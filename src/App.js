@@ -10,7 +10,7 @@ import BoardDashboard from './BoardDashboard';
 import ResetPassword from './auth/ResetPassword';
 import UpdateBanner from './components/UpdateBanner';
 
-const SPLASH_TIMEOUT_MS = 7000;
+const SPLASH_TIMEOUT_MS = 8000;
 
 function Splash({ onRetry, message = 'Loading…' }) {
   return (
@@ -22,14 +22,34 @@ function Splash({ onRetry, message = 'Loading…' }) {
   );
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function withRetry(fn, { retries = 2, delay = 250, factor = 2 } = {}) {
+  let last;
+  for (let i = 0; i <= retries; i++) {
+    try { return await fn(); } catch (e) { last = e; }
+    await sleep(delay); delay *= factor;
+  }
+  throw last;
+}
+
+async function fetchRole(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .single();
+  if (error) throw error;
+  return data?.role ?? null;
+}
+
 export default function App() {
   const [user, setUser]       = useState(null);
   const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hint, setHint]       = useState('');
+  const [softError, setSoftError] = useState('');
 
-  const timeoutRef = useRef(null);
-  const mounted    = useRef(true);
+  const splashTimer = useRef(null);
+  const mountedRef  = useRef(true);
 
   const isResetRoute = useMemo(
     () => typeof window !== 'undefined' && window.location.pathname === '/reset-password',
@@ -37,38 +57,31 @@ export default function App() {
   );
 
   useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; clearTimeout(timeoutRef.current); };
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(splashTimer.current);
+    };
   }, []);
 
-  const fetchRole = async (uid) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', uid)
-      .single();
-    if (error) throw error;
-    return data?.role ?? null;
-  };
-
-  const init = async () => {
-    clearTimeout(timeoutRef.current);
-    setHint('');
+  const initialize = async () => {
+    setSoftError('');
     setLoading(true);
 
-    timeoutRef.current = setTimeout(() => {
-      if (mounted.current) {
+    clearTimeout(splashTimer.current);
+    splashTimer.current = setTimeout(() => {
+      if (mountedRef.current) {
         setLoading(false);
-        setHint('Taking longer than expected. Check connection and try again.');
+        setSoftError('Taking longer than expected. Check your connection and retry.');
       }
     }, SPLASH_TIMEOUT_MS);
 
     try {
-      // Handle supabase PKCE links (email magic/reset)
+      // Handle PKCE (password reset / magic link). No-op if code not present.
       try {
         const url = new URL(window.location.href);
         if (url.searchParams.get('code')) {
-          await supabase.auth.exchangeCodeForSession(); // safe no-op if invalid
+          await supabase.auth.exchangeCodeForSession();
         }
       } catch {}
 
@@ -76,56 +89,72 @@ export default function App() {
       const u = session?.user ?? null;
       setUser(u);
 
-      if (!u) {
-        setRole(null);
-        return; // show SignIn
-      }
-
-      // Fetch role (single, no retries; don’t block the UI forever)
-      try {
-        const r = await fetchRole(u.id);
+      if (u) {
+        // Fetch role with a couple retries
+        const r = await withRetry(() => fetchRole(u.id), { retries: 2, delay: 300 });
         setRole(r);
-      } catch (e) {
-        // If we can’t read a role, don’t loop—show Access denied with a Sign out
+      } else {
         setRole(null);
-        setHint(e.message || 'Failed to read role.');
       }
+    } catch (err) {
+      setSoftError(err?.message || 'Failed to initialize.');
+      setRole(null);
     } finally {
-      clearTimeout(timeoutRef.current);
-      if (mounted.current) setLoading(false);
+      clearTimeout(splashTimer.current);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    init();
+    initialize();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      // Re-run init to re-check session/role
-      await init();
+    const relevant = new Set(['SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED', 'USER_UPDATED']);
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!relevant.has(event)) return;
+
+      const u = session?.user ?? null;
+      setUser(u);
+
+      if (!u) {
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const r = await withRetry(() => fetchRole(u.id), { retries: 2, delay: 300 });
+        setRole(r);
+      } catch (e) {
+        setSoftError(e?.message || 'Role lookup failed.');
+      } finally {
+        setLoading(false);
+      }
     });
 
+    // If the tab comes back to foreground after being idle, and we're not logged in,
+    // try initialization again (helps recover from network blips).
     const onVis = () => {
-      if (document.visibilityState === 'visible') init();
+      if (document.visibilityState === 'visible' && !user) {
+        initialize();
+      }
     };
-    window.addEventListener('focus', onVis);
     document.addEventListener('visibilitychange', onVis);
 
     return () => {
       sub?.subscription?.unsubscribe?.();
-      window.removeEventListener('focus', onVis);
       document.removeEventListener('visibilitychange', onVis);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } finally {
       setUser(null);
       setRole(null);
-      setLoading(false);
     }
   };
 
+  // Route: reset-password is standalone
   if (isResetRoute) {
     return (
       <Box minH="100vh" bg="background" px={{ base: 4, md: 6 }} py={{ base: 6, md: 10 }}>
@@ -136,12 +165,15 @@ export default function App() {
     );
   }
 
-  if (loading) return <Splash onRetry={init} message={hint || 'Loading…'} />;
+  if (loading) {
+    return <Splash onRetry={initialize} message={softError || 'Loading…'} />;
+  }
 
   if (!user) {
     return <SignIn setUser={setUser} />;
   }
 
+  // App shell
   const AppShell = ({ children }) => (
     <Box
       minH="100vh"
@@ -157,6 +189,7 @@ export default function App() {
     </Box>
   );
 
+  // Role switch
   if (role === 'admin') {
     return (
       <AppShell>
@@ -179,17 +212,16 @@ export default function App() {
     );
   }
 
-  // Unknown/missing role (don’t spin; give actionable UI)
+  // Fallback if role is unknown after attempts
   return (
     <Flex align="center" justify="center" minH="100vh" bg="background" px={6} direction="column" gap={3}>
       <Box textAlign="center">
         <Text fontSize="lg" mb={2}>Access denied</Text>
-        {hint ? <Text fontSize="sm" color="gray.600" mb={2}>{hint}</Text> : null}
         <Text fontSize="sm" color="gray.600">
           Your account doesn’t have a recognized role. Please contact an administrator.
         </Text>
       </Box>
-      <Button size="sm" variant="outline" onClick={init}>Retry</Button>
+      <Button size="sm" variant="outline" onClick={initialize}>Retry</Button>
       <Button size="sm" variant="ghost" onClick={handleLogout}>Sign out</Button>
     </Flex>
   );

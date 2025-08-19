@@ -12,7 +12,7 @@ import UpdateBanner from './components/UpdateBanner';
 
 const SPLASH_TIMEOUT_MS = 8000; // global guard
 
-// ------------- UI -------------
+// ---------- UI ----------
 function Splash({ onRetry, message = 'Loading…' }) {
   return (
     <Flex align="center" justify="center" minH="100vh" bg="background" direction="column" gap={4}>
@@ -23,7 +23,7 @@ function Splash({ onRetry, message = 'Loading…' }) {
   );
 }
 
-// ------------- Small utils -------------
+// ---------- Small utils ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function withRetry(fn, { retries = 2, delay = 250, factor = 2 } = {}) {
   let lastErr;
@@ -34,18 +34,28 @@ async function withRetry(fn, { retries = 2, delay = 250, factor = 2 } = {}) {
   }
   throw lastErr;
 }
+
 const roleCacheKey = (uid) => `role:${uid}`;
 const readCachedRole = (uid) => {
-  try { return sessionStorage.getItem(roleCacheKey(uid)) || null; } catch { return null; }
+  try {
+    const v = sessionStorage.getItem(roleCacheKey(uid));
+    // Treat empty string or missing as null
+    return v ? v : null;
+  } catch {
+    return null;
+  }
 };
 const writeCachedRole = (uid, role) => {
-  try { sessionStorage.setItem(roleCacheKey(uid), role || ''); } catch {}
+  try {
+    // Store empty string to represent null/unknown (keeps key shape)
+    sessionStorage.setItem(roleCacheKey(uid), role || '');
+  } catch {}
 };
 const clearCachedRole = (uid) => {
   try { sessionStorage.removeItem(roleCacheKey(uid)); } catch {}
 };
 
-// ------------- DB helpers -------------
+// ---------- DB helpers ----------
 async function fetchRoleOnce(userId) {
   const { data, error } = await supabase
     .from('users')
@@ -61,21 +71,20 @@ async function fetchRoleOnce(userId) {
 async function ensureProfile(user) {
   if (!user?.id) return null;
 
-  // 1) Is there already a row? If yes, return its role (don’t touch).
+  // 1) If a row already exists, just return its role.
   try {
     const role = await fetchRoleOnce(user.id);
     return role;
-  } catch (_) {
-    /* fall through to insert */
+  } catch {
+    // fall through to insert
   }
 
-  // 2) Insert a new row with default role 'engineer' (adjust if needed).
+  // 2) Insert a new row with default role 'engineer' (adjust if you like).
   const first = user.user_metadata?.first_name?.toString().trim() || '';
   const last  = user.user_metadata?.last_name?.toString().trim() || '';
   const display = [first, last].filter(Boolean).join(' ') || null;
 
-  // Insert only if not exists (avoid overwriting)
-  const { error: upsertErr } = await supabase
+  const { error: insertErr } = await supabase
     .from('users')
     .insert({
       id: user.id,
@@ -84,9 +93,9 @@ async function ensureProfile(user) {
       role: 'engineer',
     });
 
-  if (upsertErr) {
-    // If insert failed due to race (row now exists), just read role again
-    try { return await fetchRoleOnce(user.id); } catch (e) { throw upsertErr; }
+  if (insertErr) {
+    // If insert failed because row now exists, read again.
+    try { return await fetchRoleOnce(user.id); } catch (e) { throw insertErr; }
   }
 
   return 'engineer';
@@ -112,7 +121,7 @@ export default function App() {
     return () => { mountedRef.current = false; clearTimeout(splashTimer.current); };
   }, []);
 
-  // --- central boot routine ---
+  // ---- central boot routine ----
   const initialize = async () => {
     setSoftError('');
     setLoading(true);
@@ -131,7 +140,7 @@ export default function App() {
       try {
         const url = new URL(window.location.href);
         if (url.searchParams.get('code')) {
-          await supabase.auth.exchangeCodeForSession(); // no-op if token invalid
+          await supabase.auth.exchangeCodeForSession(); // no-op if invalid
         }
       } catch {}
 
@@ -141,20 +150,18 @@ export default function App() {
       setUser(u);
 
       if (!u) {
-        // no user -> done
-        clearCachedRole('unknown');
         setRole(null);
-        return;
+        return; // not logged in -> show SignIn after finally{}
       }
 
-      // 2) Optimistic role from cache (instant render) while verifying
+      // 2) Optimistic role from cache (instant paint) while verifying server truth
       const cached = readCachedRole(u.id);
       if (cached) {
         setRole(cached);
         setVerifying(true);
       }
 
-      // 3) Ensure there is a profile row; then fetch role with retries
+      // 3) Ensure profile row exists; then read fresh role (both with retry)
       const ensuredRole = await withRetry(() => ensureProfile(u), { retries: 2, delay: 250 });
       const freshRole   = await withRetry(() => fetchRoleOnce(u.id), { retries: 2, delay: 250 });
 
@@ -173,7 +180,7 @@ export default function App() {
   useEffect(() => {
     initialize();
 
-    // Filter noisy auth events; only handle the ones that truly change state
+    // Only react to auth events that actually affect session/claims
     const relevant = new Set(['SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED', 'USER_UPDATED']);
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!relevant.has(event)) return;
@@ -194,7 +201,6 @@ export default function App() {
         setRole(freshRole);
         writeCachedRole(u.id, freshRole || '');
       } catch (e) {
-        // If it fails, keep whatever we have and try again later
         setSoftError(e?.message || 'Role check failed.');
       } finally {
         setLoading(false);
@@ -204,7 +210,10 @@ export default function App() {
 
     // Retry when tab becomes visible and we’re unauthenticated but not loading
     const onVis = () => {
-      if (document.visibilityState === 'visible' && !user && !loading) initialize();
+      if (document.visibilityState === 'visible') {
+        // If signed out and idle, try again (use latest state from closure – acceptable here)
+        if (!user && !loading) initialize();
+      }
     };
     document.addEventListener('visibilitychange', onVis);
 
@@ -212,18 +221,19 @@ export default function App() {
       sub?.subscription?.unsubscribe?.();
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, []); // intentional: run once on mount
+  }, []); // run once on mount
 
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } finally {
+      const uid = user?.id;
       setUser(null);
       setRole(null);
       setVerifying(false);
-      clearCachedRole(user?.id || 'unknown');
+      if (uid) clearCachedRole(uid);
     }
   };
 
-  // --- route: /reset-password should always show the reset screen ---
+  // ---- route: /reset-password should always show the reset screen ----
   if (isResetRoute) {
     return (
       <Box minH="100vh" bg="background" px={{ base: 4, md: 6 }} py={{ base: 6, md: 10 }}>
@@ -234,12 +244,12 @@ export default function App() {
     );
   }
 
-  // --- gate rendering until we’re sure ---
+  // ---- gate rendering until we’re sure ----
   if (loading || verifying) {
     return <Splash onRetry={initialize} message={softError || 'Loading…'} />;
   }
 
-  // Not logged in yet
+  // Not logged in
   if (!user) {
     return <SignIn setUser={setUser} />;
   }
@@ -260,7 +270,7 @@ export default function App() {
     </Box>
   );
 
-  // Now decide by role
+  // Route by role
   if (role === 'admin') {
     return (
       <AppShell>
@@ -283,7 +293,7 @@ export default function App() {
     );
   }
 
-  // If we truly have no valid role after all checks:
+  // If role couldn’t be resolved after all checks
   return (
     <Flex align="center" justify="center" minH="100vh" bg="background" px={6} direction="column" gap={3}>
       <Box textAlign="center">
@@ -293,6 +303,7 @@ export default function App() {
         </Text>
       </Box>
       <Button size="sm" variant="outline" onClick={initialize}>Retry</Button>
+      <Button size="sm" variant="ghost" onClick={handleLogout}>Sign out</Button>
     </Flex>
   );
 }

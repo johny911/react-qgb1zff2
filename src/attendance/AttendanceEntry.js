@@ -15,110 +15,120 @@ import TeamAttendanceForm from './TeamAttendanceForm';
 export default function AttendanceEntry({ project, date, setScreen }) {
   const toast = useToast();
 
-  const [entries, setEntries] = useState([]);
+  const [entries, setEntries] = useState([]);          // [{ team_id, labour_type_id, count }]
   const [attendanceExists, setAttendanceExists] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(true);
 
+  // Load existing attendance for project+date
   useEffect(() => {
     let ignore = false;
 
-    async function fetchAttendance() {
+    const run = async () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('attendance')
-        .select('*')
+        .select('team_id, labour_type_id, count')
         .eq('project_id', project.id)
-        .eq('date', date)
-        .order('created_at');
+        .eq('date', date);
 
-      if (!ignore) {
-        if (error) {
-          console.error(error);
-          toast({
-            title: 'Error loading attendance',
-            description: error.message,
-            status: 'error',
-          });
-        } else if (data && data.length > 0) {
-          setEntries(data);
-          setAttendanceExists(true);
-          setEditMode(true);
-        } else {
-          setEntries([]);
-          setAttendanceExists(false);
-          setEditMode(true);
-        }
-        setLoading(false);
+      if (ignore) return;
+
+      if (error) {
+        console.error(error);
+        toast({
+          title: 'Error loading attendance',
+          description: error.message,
+          status: 'error',
+        });
+        setEntries([]);
+        setAttendanceExists(false);
+        setEditMode(true);
+      } else if (data && data.length) {
+        setEntries(
+          data.map(r => ({
+            team_id: String(r.team_id),
+            labour_type_id: String(r.labour_type_id),
+            count: String(r.count ?? ''),
+          }))
+        );
+        setAttendanceExists(true);
+        setEditMode(true); // allow editing by default
+      } else {
+        setEntries([]);
+        setAttendanceExists(false);
+        setEditMode(true);
       }
-    }
-
-    fetchAttendance();
-    return () => {
-      ignore = true;
+      setLoading(false);
     };
+
+    run();
+    return () => { ignore = true; };
   }, [project.id, date, toast]);
+
+  const canSave = () =>
+    entries.length > 0 &&
+    entries.every(
+      e =>
+        e.team_id &&
+        e.labour_type_id &&
+        e.count &&
+        !Number.isNaN(parseInt(e.count, 10)) &&
+        parseInt(e.count, 10) > 0
+    );
 
   const handleSubmit = async () => {
     if (!editMode) return;
 
-    // Clear existing before insert (if editing)
+    // Delete existing rows for this (project,date)
     if (attendanceExists) {
-      const { error: delError } = await supabase
+      const { error: delErr } = await supabase
         .from('attendance')
         .delete()
         .eq('project_id', project.id)
         .eq('date', date);
 
-      if (delError) {
+      if (delErr) {
         toast({
-          title: 'Error updating attendance',
-          description: delError.message,
+          title: 'Save failed',
+          description: delErr.message,
           status: 'error',
         });
         return;
       }
     }
 
-    if (entries.length === 0) {
+    // Insert new rows
+    const payload = entries.map(e => ({
+      project_id: project.id,
+      date,
+      team_id: e.team_id,
+      labour_type_id: e.labour_type_id,
+      count: parseInt(e.count, 10),
+    }));
+
+    const { error: insErr } = await supabase.from('attendance').insert(payload);
+    if (insErr) {
       toast({
-        title: 'Nothing to save',
-        description: 'Please add at least one team entry.',
-        status: 'warning',
+        title: 'Save failed',
+        description: insErr.message,
+        status: 'error',
       });
       return;
     }
 
-    const { error } = await supabase.from('attendance').insert(
-      entries.map((e) => ({
-        ...e,
-        project_id: project.id,
-        date,
-      }))
-    );
-
-    if (error) {
-      toast({
-        title: 'Error saving attendance',
-        description: error.message,
-        status: 'error',
-      });
-    } else {
-      toast({
-        title: 'Attendance saved',
-        description: 'Your attendance has been recorded.',
-        status: 'success',
-      });
-      setAttendanceExists(true);
-      setEditMode(false);
-    }
+    toast({
+      title: attendanceExists ? 'Attendance updated' : 'Attendance saved',
+      description: `${payload.length} entries for ${date}.`,
+      status: 'success',
+    });
+    setAttendanceExists(true);
+    setEditMode(false);
   };
-
-  const canSave = () => entries.length > 0;
 
   return (
     <Box>
-      {/* Header */}
+      {/* Simple header (no back in header) */}
       <Flex align="center" justify="space-between" mb={4}>
         <Heading size="sm">Enter Attendance</Heading>
         <Badge colorScheme={attendanceExists ? 'purple' : 'yellow'} variant="subtle">
@@ -126,10 +136,15 @@ export default function AttendanceEntry({ project, date, setScreen }) {
         </Badge>
       </Flex>
 
-      {/* Form */}
-      <TeamAttendanceForm entries={entries} setEntries={setEntries} />
+      {/* Team/type rows editor */}
+      <TeamAttendanceForm
+        loading={loading}
+        entries={entries}
+        setEntries={setEntries}
+        disabled={!editMode}
+      />
 
-      {/* Footer buttons */}
+      {/* Footer actions */}
       <Box mt={6} width="100%">
         <Stack spacing={3}>
           <Button
@@ -142,7 +157,7 @@ export default function AttendanceEntry({ project, date, setScreen }) {
             {attendanceExists ? '💾 Update Attendance' : '✅ Save Attendance'}
           </Button>
 
-          {/* Back button restored below Save */}
+          {/* Back button restored BELOW save */}
           <Button
             variant="outline"
             width="100%"

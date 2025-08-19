@@ -1,84 +1,136 @@
 // src/App.js
-import React, { useEffect, useState } from 'react';
-import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Flex, Spinner, Text, Button } from '@chakra-ui/react';
 import { supabase } from './supabaseClient';
 
-import Auth from './Auth';                    // ⬅️ use the new auth router
-import MainAttendanceApp from './MainAttendanceApp';
+import SignIn from './auth/SignIn';
 import AdminDashboard from './AdminDashboard';
+import MainAttendanceApp from './MainAttendanceApp';
 import BoardDashboard from './BoardDashboard';
+import ResetPassword from './ResetPassword';
 import UpdateBanner from './components/UpdateBanner';
-import ResetPassword from './auth/ResetPassword';
+
+const SAFETY_TIMEOUT_MS = 6000;
+
+function Splash({ onRetry, message = 'Loading…' }) {
+  return (
+    <Flex align="center" justify="center" minH="100vh" bg="background" direction="column" gap={4}>
+      <Spinner size="lg" />
+      <Text fontSize="sm" color="gray.600">{message}</Text>
+      <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+    </Flex>
+  );
+}
 
 export default function App() {
   const [user, setUser]       = useState(null);
   const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [softError, setSoftError] = useState('');
+  const safetyTimer = useRef(null);
+  const mounted = useRef(true);
 
-  // Is the current URL the password reset page?
-  const isResetRoute =
-    typeof window !== 'undefined' &&
-    window.location.pathname === '/reset-password';
+  const isResetRoute = useMemo(() =>
+    typeof window !== 'undefined' && window.location.pathname === '/reset-password', []);
 
   useEffect(() => {
-    const getSessionAndUser = async () => {
-      // If the Supabase email link includes a `code` param (PKCE),
-      // exchange it for a session so the reset screen has auth.
+    mounted.current = true;
+    const cleanup = () => { mounted.current = false; if (safetyTimer.current) clearTimeout(safetyTimer.current); };
+    return cleanup;
+  }, []);
+
+  // Utility: timeout a promise
+  const withTimeout = (promise, ms, timeoutMsg = 'Timed out') =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMsg)), ms)),
+    ]);
+
+  const fetchUserRole = async (userId) => {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('users').select('role').eq('id', userId).single(),
+        4000,
+        'Role fetch timed out'
+      );
+      if (error) throw error;
+      return data?.role ?? null;
+    } catch (err) {
+      setSoftError(err.message);
+      return null;
+    }
+  };
+
+  const init = async () => {
+    setSoftError('');
+    setLoading(true);
+
+    // Global safety: never spin forever
+    if (safetyTimer.current) clearTimeout(safetyTimer.current);
+    safetyTimer.current = setTimeout(() => {
+      if (mounted.current) setLoading(false);
+      setSoftError('Took too long to start. Check your connection and retry.');
+    }, SAFETY_TIMEOUT_MS);
+
+    try {
+      // Handle PKCE code flow (Supabase email links) — no-op if not present
       try {
         const url = new URL(window.location.href);
         const hasCode = url.searchParams.get('code');
         if (hasCode) {
-          await supabase.auth.exchangeCodeForSession();
+          await withTimeout(supabase.auth.exchangeCodeForSession(), 4000, 'Auth exchange timed out');
         }
-      } catch {
-        // ignore — safe no-op if param isn't present
-      }
+      } catch (_) {}
 
-      // Read the session
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUser = session?.user || null;
+      // Session
+      const { data: { session } } = await withTimeout(
+        supabase.auth.getSession(),
+        4000,
+        'Session fetch timed out'
+      );
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
 
       if (currentUser) {
-        await fetchUserRole(currentUser.id);
+        const r = await fetchUserRole(currentUser.id);
+        setRole(r);
+      }
+    } catch (err) {
+      setSoftError(err.message || 'Failed to initialize.');
+    } finally {
+      if (safetyTimer.current) clearTimeout(safetyTimer.current);
+      if (mounted.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        const r = await fetchUserRole(session.user.id);
+        setRole(r);
       } else {
-        setLoading(false);
+        setRole(null);
+      }
+      setLoading(false);
+    });
+
+    // In case the tab was hidden during load, retry when it becomes visible
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !user && !role && !loading) {
+        init();
       }
     };
+    document.addEventListener('visibilitychange', onVis);
 
-    getSessionAndUser();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const currentUser = session?.user || null;
-        setUser(currentUser);
-        if (currentUser) {
-          await fetchUserRole(currentUser.id);
-        } else {
-          setRole(null);
-          setLoading(false);
-        }
-      }
-    );
-
-    return () => listener?.subscription?.unsubscribe();
+    return () => {
+      sub?.subscription?.unsubscribe?.();
+      document.removeEventListener('visibilitychange', onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const fetchUserRole = async (userId) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching role:', error.message);
-      setRole(null);
-    } else {
-      setRole(data?.role || null);
-    }
-    setLoading(false);
-  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -86,24 +138,10 @@ export default function App() {
     setRole(null);
   };
 
-  if (loading) {
-    return (
-      <Flex align="center" justify="center" minH="100vh" bg="background">
-        <Spinner size="lg" />
-      </Flex>
-    );
-  }
-
-  // Show the password reset screen whenever the route is /reset-password,
-  // regardless of login state or role.
+  // Route: /reset-password always shows the reset screen
   if (isResetRoute) {
     return (
-      <Box
-        minH="100vh"
-        bg="background"
-        px={{ base: 4, md: 6 }}
-        py={{ base: 6, md: 10 }}
-      >
+      <Box minH="100vh" bg="background" px={{ base: 4, md: 6 }} py={{ base: 6, md: 10 }}>
         <Box maxW="560px" mx="auto">
           <ResetPassword />
         </Box>
@@ -111,12 +149,14 @@ export default function App() {
     );
   }
 
-  // Not signed in -> show Auth (Sign In / Sign Up / Reset)
-  if (!user) {
-    return <Auth setUser={setUser} />;
+  if (loading) {
+    return <Splash onRetry={init} message={softError || 'Loading…'} />;
   }
 
-  // Minimal shell (no header, no nav)
+  if (!user) {
+    return <SignIn setUser={setUser} />;
+  }
+
   const AppShell = ({ children }) => (
     <Box
       minH="100vh"
@@ -139,7 +179,6 @@ export default function App() {
       </AppShell>
     );
   }
-
   if (role === 'engineer') {
     return (
       <AppShell>
@@ -147,7 +186,6 @@ export default function App() {
       </AppShell>
     );
   }
-
   if (role === 'board') {
     return (
       <AppShell>
@@ -156,15 +194,16 @@ export default function App() {
     );
   }
 
-  // Unknown role fallback
+  // Unknown role
   return (
-    <Flex align="center" justify="center" minH="100vh" bg="background" px={6}>
+    <Flex align="center" justify="center" minH="100vh" bg="background" px={6} direction="column" gap={3}>
       <Box textAlign="center">
         <Text fontSize="lg" mb={2}>Access denied</Text>
         <Text fontSize="sm" color="gray.600">
           Your account doesn’t have a recognized role. Please contact an administrator.
         </Text>
       </Box>
+      <Button size="sm" variant="outline" onClick={init}>Retry</Button>
     </Flex>
   );
 }

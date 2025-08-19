@@ -114,6 +114,32 @@ export default function MainAttendanceApp({ user, onLogout }) {
   const [viewResults, setViewResults] = useState([])
   const isEditing = attendanceExists
 
+  // NEW: friendly display name (DB -> metadata -> email prefix)
+  const [displayName, setDisplayName] = useState('')
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('name, email')
+          .eq('id', user.id)
+          .single()
+
+        const nameFromDb = data?.name?.trim()
+        const nameFromMeta = user?.user_metadata?.name?.trim()
+        const fallback = user?.email?.split('@')[0] || 'there'
+        const finalName = nameFromDb || nameFromMeta || fallback
+
+        if (alive) setDisplayName(finalName)
+      } catch {
+        const fallback = user?.email?.split('@')[0] || 'there'
+        if (alive) setDisplayName(fallback)
+      }
+    })()
+    return () => { alive = false }
+  }, [user?.id]) 
+
   useEffect(() => {
     ;(async () => {
       const { data: p } = await supabase.from('projects').select('id,name')
@@ -310,7 +336,7 @@ export default function MainAttendanceApp({ user, onLogout }) {
       >
         {screen === 'home' && (
           <Stack spacing={5}>
-            <Heading size="sm">👋 Welcome, {user.email.split('@')[0]}</Heading>
+            <Heading size="sm">👋 Welcome, {displayName}</Heading>
 
             <SectionCard title="Quick actions" subtitle="Choose what you’d like to do.">
               <Stack spacing={3}>

@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
 import { supabase } from './supabaseClient';
 
-import Login from './Login';
+import Auth from './Auth';                    // ⬅️ use the new auth router
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
 import BoardDashboard from './BoardDashboard';
@@ -22,19 +22,19 @@ export default function App() {
 
   useEffect(() => {
     const getSessionAndUser = async () => {
-      // 1) If the Supabase email link includes a `code` param (PKCE),
-      //    exchange it for a session so the reset screen has auth.
+      // If the Supabase email link includes a `code` param (PKCE),
+      // exchange it for a session so the reset screen has auth.
       try {
         const url = new URL(window.location.href);
         const hasCode = url.searchParams.get('code');
         if (hasCode) {
           await supabase.auth.exchangeCodeForSession();
         }
-      } catch (_) {
+      } catch {
         // ignore — safe no-op if param isn't present
       }
 
-      // 2) Now read the session
+      // Read the session
       const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user || null;
       setUser(currentUser);
@@ -111,8 +111,9 @@ export default function App() {
     );
   }
 
+  // Not signed in -> show Auth (Sign In / Sign Up / Reset)
   if (!user) {
-    return <Login setUser={setUser} />;
+    return <Auth setUser={setUser} />;
   }
 
   // Minimal shell (no header, no nav)

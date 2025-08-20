@@ -20,6 +20,7 @@ import BoardDashboard from './BoardDashboard';
 import WorkReport from './WorkReport';
 import ViewWorkReports from './ViewWorkReports';
 import UpdateBanner from './components/UpdateBanner';
+import BuildTag from './components/BuildTag';
 
 export default function App() {
   const [user, setUser]       = useState(null);
@@ -101,7 +102,14 @@ export default function App() {
     const emailLabel = user?.email ?? '';
 
     return (
-      <Box minH="100vh" bg="gray.50" pb="92px">
+      <Box
+        minH="100vh"
+        bg="gray.50"
+        // leave space for the tab bar + iOS safe area so content never hides under it
+        pb={`calc(env(safe-area-inset-bottom) + 112px)`}
+        // remove accidental sideways scroll from any child
+        overflowX="hidden"
+      >
         {/* Header */}
         <Box
           position="sticky"
@@ -114,13 +122,13 @@ export default function App() {
           <Flex
             maxW="560px"
             mx="auto"
-            px={4}
+            px={{ base: 4, md: 6 }}
             py={3}
             align="center"
             justify="space-between"
           >
             <Text fontSize="lg" fontWeight="bold">SiteTrack</Text>
-            <HStack spacing={2}>
+            <HStack spacing={2} minW={0}>
               <HStack
                 px={2}
                 py={1}
@@ -128,9 +136,13 @@ export default function App() {
                 borderColor={border}
                 borderRadius="md"
                 fontSize="xs"
+                maxW={{ base: '58vw', md: '320px' }} // clamp width
+                minW={0}
               >
                 <Icon as={FiUser} />
-                <Text noOfLines={1} maxW="180px">{emailLabel}</Text>
+                <Text noOfLines={1} minW={0} flex="1">
+                  {emailLabel}
+                </Text>
               </HStack>
               <Button size="sm" variant="outline" onClick={handleLogout}>
                 Logout
@@ -140,7 +152,7 @@ export default function App() {
         </Box>
 
         {/* Content */}
-        <Box maxW="560px" mx="auto" px={4} pt={4}>
+        <Box maxW="560px" mx="auto" px={{ base: 4, md: 6 }} pt={4}>
           {children}
         </Box>
 
@@ -153,11 +165,12 @@ export default function App() {
           bg={barBg}
           borderTop="1px solid"
           borderColor={border}
-          pb={`calc(env(safe-area-inset-bottom) + 8px)`}
+          // keep it comfortably tappable + safe area
+          pb={`calc(env(safe-area-inset-bottom) + 10px)`}
           pt="8px"
           zIndex={10}
         >
-          <Flex maxW="560px" mx="auto" px={3} gap={2}>
+          <Flex maxW="560px" mx="auto" px={{ base: 4, md: 6 }} gap={2}>
             {role === 'engineer' && (
               <>
                 <TabButton
@@ -199,6 +212,17 @@ export default function App() {
               />
             )}
           </Flex>
+        </Box>
+
+        {/* Build/version tag – sits ABOVE the tab bar now */}
+        <Box
+          position="fixed"
+          right={{ base: '12px', md: '20px' }}
+          // 72px ≈ tab bar height; keep it safely above + safe area + a tiny margin
+          bottom="calc(72px + env(safe-area-inset-bottom) + 10px)"
+          zIndex={20}
+        >
+          <BuildTag />
         </Box>
 
         {/* SW update banner */}
@@ -251,6 +275,7 @@ function TabButton({ active, onClick, icon, label }) {
     <Button
       onClick={onClick}
       flex="1"
+      minW={0}                 // prevents overflow on narrow screens
       variant={active ? 'solid' : 'ghost'}
       colorScheme="brand"
       leftIcon={<Icon as={icon} />}

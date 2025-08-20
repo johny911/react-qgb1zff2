@@ -3,26 +3,32 @@ import React, { useRef } from 'react';
 import { Box } from '@chakra-ui/react';
 import { BUILD_VERSION } from '../version';
 
+const HARD_REFRESH_KEY = 'HARD_REFRESH_IN_PROGRESS';
+
 export default function BuildTag() {
   const tapsRef = useRef({ count: 0, timer: null });
 
-  const hardRefresh = async () => {
+  const hardRefreshOnce = async () => {
+    // Mark that we’re performing a hard refresh so other code (e.g., update banner)
+    // can skip any auto-reload this one time.
+    try {
+      sessionStorage.setItem(HARD_REFRESH_KEY, '1');
+    } catch {}
+
     try {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(
-          regs.map(async (r) => {
-            try { await r.update(); } catch {}
-            try { await r.unregister(); } catch {}
-          })
-        );
+        // IMPORTANT: Do NOT call reg.update() here. It can create a new waiting worker.
+        await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
       }
       if (window.caches) {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
     } finally {
-      window.location.replace(window.location.href.split('#')[0]);
+      // Reload to a clean URL (no hash/search) to avoid multiple navigations.
+      const clean = window.location.origin + window.location.pathname;
+      window.location.replace(clean);
     }
   };
 
@@ -41,7 +47,7 @@ export default function BuildTag() {
         t.timer = null;
       }
       t.count = 0;
-      hardRefresh();
+      hardRefreshOnce();
     }
   };
 

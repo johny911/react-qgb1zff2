@@ -6,13 +6,17 @@ import { supabase } from './supabaseClient';
 import Login from './Login';
 import MainAttendanceApp from './MainAttendanceApp';
 import AdminDashboard from './AdminDashboard';
-import BoardDashboard from './BoardDashboard';        // ✅ NEW: board view
-import UpdateBanner from './components/UpdateBanner'; // shows toast when new SW is available
+import BoardDashboard from './BoardDashboard';
+import ResetPassword from './ResetPassword';           // ✅ added
+import UpdateBanner from './components/UpdateBanner';
 
 export default function App() {
   const [user, setUser]       = useState(null);
   const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(      // ✅ added
+    typeof window !== 'undefined' && window.location.pathname === '/reset-password'
+  );
 
   useEffect(() => {
     const getSessionAndUser = async () => {
@@ -29,11 +33,14 @@ export default function App() {
     getSessionAndUser();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      async (event, session) => {
+        // ✅ enter reset-password mode when Supabase signals it
+        if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
+
         const currentUser = session?.user || null;
         setUser(currentUser);
         if (currentUser) {
-          fetchUserRole(currentUser.id);
+          await fetchUserRole(currentUser.id);
         } else {
           setRole(null);
           setLoading(false);
@@ -74,11 +81,31 @@ export default function App() {
     );
   }
 
+  // ✅ render reset-password screen when:
+  //  - user opened /reset-password directly, or
+  //  - Supabase emitted PASSWORD_RECOVERY
+  if (recoveryMode || (typeof window !== 'undefined' && window.location.pathname === '/reset-password')) {
+    return (
+      <Box
+        minH="100vh"
+        bg="background"
+        px={{ base: 4, md: 6 }}
+        py={{ base: 6, md: 10 }}
+        pb={`calc(env(safe-area-inset-bottom) + 24px)`}
+      >
+        <Box maxW="560px" mx="auto">
+          <ResetPassword />
+        </Box>
+        <UpdateBanner />
+      </Box>
+    );
+  }
+
   if (!user) {
     return <Login setUser={setUser} />;
   }
 
-  // Minimal shell (no header, no nav) — Apple-style canvas
+  // Minimal shell (no header, no nav)
   const AppShell = ({ children }) => (
     <Box
       minH="100vh"

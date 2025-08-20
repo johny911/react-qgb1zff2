@@ -1,6 +1,8 @@
 // src/components/UpdateBanner.js
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Box, Button, Slide } from '@chakra-ui/react';
+
+const HARD_REFRESH_KEY = 'HARD_REFRESH_IN_PROGRESS';
 
 export default function UpdateBanner() {
   const [waitingWorker, setWaitingWorker] = useState(null);
@@ -8,45 +10,57 @@ export default function UpdateBanner() {
   const reloadedRef = useRef(false);
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
+    // If a hard refresh (triple-tap) just happened, skip banner once.
+    const hard = sessionStorage.getItem(HARD_REFRESH_KEY);
+    if (hard) {
+      try { sessionStorage.removeItem(HARD_REFRESH_KEY); } catch {}
+      return; // do not attach listeners for this load
+    }
 
-    let stopListening = () => {};
+    let regCleanup = null;
 
-    const init = async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (!reg) return;
 
-      // If a new worker is already waiting, show the banner
-      if (reg?.waiting) {
-        setWaitingWorker(reg.waiting);
-        setShow(true);
-      }
+        // If a worker is already waiting, show the banner.
+        if (reg.waiting) {
+          setWaitingWorker(reg.waiting);
+          setShow(true);
+        }
 
-      // Detect a newly found update
-      const onUpdateFound = () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        const onStateChange = () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            setWaitingWorker(newWorker);
-            setShow(true);
-          }
+        const onUpdateFound = () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          const onStateChange = () => {
+            // Show banner only when an update is fully installed and there is a controller
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              setWaitingWorker(newWorker);
+              setShow(true);
+            }
+          };
+          newWorker.addEventListener('statechange', onStateChange);
         };
-        newWorker.addEventListener('statechange', onStateChange);
-      };
 
-      reg?.addEventListener('updatefound', onUpdateFound);
+        reg.addEventListener('updatefound', onUpdateFound);
+        regCleanup = () => reg.removeEventListener('updatefound', onUpdateFound);
+      });
+    }
 
-      stopListening = () => {
-        reg?.removeEventListener('updatefound', onUpdateFound);
-      };
+    return () => {
+      if (regCleanup) regCleanup();
     };
-
-    init();
-    return () => stopListening();
   }, []);
 
-  const refreshPage = async () => {
-    // Reload ONCE when a new SW takes control
+  const refreshPage = () => {
+    if (!waitingWorker) return;
+
+    // Tell the waiting worker to activate immediately
+    try {
+      waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    } catch {}
+
+    // Reload exactly once when the new worker takes control
     const onControllerChange = () => {
       if (reloadedRef.current) return;
       reloadedRef.current = true;
@@ -55,12 +69,7 @@ export default function UpdateBanner() {
 
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true });
 
-    // Ask the waiting (or installing) SW to activate immediately
-    const reg = await navigator.serviceWorker.getRegistration();
-    const worker = waitingWorker || reg?.waiting || reg?.installing;
-    worker?.postMessage({ type: 'SKIP_WAITING' });
-
-    // Hide the banner to avoid double clicks
+    // Hide the banner to avoid user re-clicks
     setShow(false);
   };
 
@@ -75,7 +84,6 @@ export default function UpdateBanner() {
         display="flex"
         alignItems="center"
         justifyContent="space-between"
-        boxShadow="lg"
       >
         <Box fontSize="sm">A new version is available.</Box>
         <Button size="sm" colorScheme="whiteAlpha" onClick={refreshPage}>

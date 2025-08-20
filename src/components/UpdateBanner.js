@@ -1,76 +1,74 @@
-// src/components/UpdateBanner.js
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Slide } from '@chakra-ui/react';
 
-const HARD_REFRESH_KEY = 'HARD_REFRESH_IN_PROGRESS';
+const HARD_REFRESH_KEY = 'HARD_REFRESH_TS';
+const SUPPRESS_MS = 15000; // suppress auto-reload for 15s after manual hard refresh
 
 export default function UpdateBanner() {
   const [waitingWorker, setWaitingWorker] = useState(null);
   const [show, setShow] = useState(false);
   const reloadedRef = useRef(false);
 
+  // Skip banner once if a manual hard refresh just happened
+  const hardRefreshRecently = () => {
+    try {
+      const ts = Number(sessionStorage.getItem(HARD_REFRESH_KEY) || 0);
+      if (!ts) return false;
+      return (Date.now() - ts) < SUPPRESS_MS;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
-    // If a hard refresh (triple-tap) just happened, skip banner once.
-    const hard = sessionStorage.getItem(HARD_REFRESH_KEY);
-    if (hard) {
-      try { sessionStorage.removeItem(HARD_REFRESH_KEY); } catch {}
-      return; // do not attach listeners for this load
-    }
+    if (!('serviceWorker' in navigator)) return;
+    if (hardRefreshRecently()) return;
 
-    let regCleanup = null;
+    let detach = () => {};
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then((reg) => {
-        if (!reg) return;
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return;
 
-        // If a worker is already waiting, show the banner.
-        if (reg.waiting) {
-          setWaitingWorker(reg.waiting);
-          setShow(true);
-        }
+      if (reg.waiting) {
+        setWaitingWorker(reg.waiting);
+        setShow(true);
+      }
 
-        const onUpdateFound = () => {
-          const newWorker = reg.installing;
-          if (!newWorker) return;
-          const onStateChange = () => {
-            // Show banner only when an update is fully installed and there is a controller
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              setWaitingWorker(newWorker);
-              setShow(true);
-            }
-          };
-          newWorker.addEventListener('statechange', onStateChange);
+      const onUpdateFound = () => {
+        const sw = reg.installing;
+        if (!sw) return;
+        const onStateChange = () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            setWaitingWorker(sw);
+            setShow(true);
+          }
         };
+        sw.addEventListener('statechange', onStateChange);
+      };
 
-        reg.addEventListener('updatefound', onUpdateFound);
-        regCleanup = () => reg.removeEventListener('updatefound', onUpdateFound);
-      });
-    }
+      reg.addEventListener('updatefound', onUpdateFound);
+      detach = () => reg.removeEventListener('updatefound', onUpdateFound);
+    });
 
-    return () => {
-      if (regCleanup) regCleanup();
-    };
+    return () => detach();
   }, []);
+
+  const reloadOnceOnControllerChange = () => {
+    if (reloadedRef.current) return;
+    reloadedRef.current = true;
+    const handler = () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', handler);
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', handler);
+  };
 
   const refreshPage = () => {
     if (!waitingWorker) return;
-
-    // Tell the waiting worker to activate immediately
-    try {
-      waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-    } catch {}
-
-    // Reload exactly once when the new worker takes control
-    const onControllerChange = () => {
-      if (reloadedRef.current) return;
-      reloadedRef.current = true;
-      window.location.reload();
-    };
-
-    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true });
-
-    // Hide the banner to avoid user re-clicks
+    try { sessionStorage.setItem(HARD_REFRESH_KEY, String(Date.now())); } catch {}
+    try { waitingWorker.postMessage({ type: 'SKIP_WAITING' }); } catch {}
     setShow(false);
+    reloadOnceOnControllerChange();
   };
 
   if (!show) return null;

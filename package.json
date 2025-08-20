@@ -23,17 +23,12 @@
     "swSrc": "src/service-worker.js"
   },
   "scripts": {
-    "start": "DISABLE_ESLINT_PLUGIN=true react-scripts start",
-    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "start": "react-scripts start",
+    "build": "REACT_APP_VERCEL_GIT_COMMIT_SHA=$VERCEL_GIT_COMMIT_SHA REACT_APP_VERCEL_GIT_COMMIT_MESSAGE=\"$VERCEL_GIT_COMMIT_MESSAGE\" react-scripts build",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject"
   },
   "devDependencies": {
-    "react-scripts": "5.0.1",
-    "eslint": "^8.57.0",
-    "eslint-plugin-react-hooks": "^4.6.0"
-  },
-  "eslintConfig": {
-    "extends": ["react-app", "react-app/jest"]
+    "react-scripts": "latest"
   }
 }

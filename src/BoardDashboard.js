@@ -329,7 +329,7 @@ export default function BoardDashboard({ user, onLogout }) {
         </Tabs>
 
         <Text mt={3} fontSize="xs" color="gray.500">
-          Overview uses the range selector; “Attendance at a Glance” uses the date picker above.
+          Overview uses the range selector; “Attendance at a glance” uses the date picker above.
         </Text>
       </Box>
 
